@@ -9,7 +9,7 @@ Feed + extension agent. Branch `wave1/extension`. Tick items as they land (tests
 - [x] 5. Interception (`src/extension/inject.ts`, `src/extension/content.ts`)
 - [x] 6. Service worker (`src/extension/background/*.ts`)
 - [x] 7. Panel (`src/extension/panel/*`)
-- [ ] 8. Export page (`src/extension/export.html`, `export.ts`)
+- [x] 8. Export page (`src/extension/export.html`, `export.ts`)
 - [ ] 9. Schema-mapping tool (`scripts/analyze-frames.ts`)
 - [ ] 10. Build (`scripts/build-extension.mjs`, manifest) and confirm output
 
