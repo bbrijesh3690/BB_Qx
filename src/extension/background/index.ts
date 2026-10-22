@@ -26,11 +26,22 @@ let recorder: RecorderState = initialRecorder(Date.now());
 let recorderDirty = false;
 let lastPruneAt = 0;
 
+// Raw frames stored before this redaction policy kept account payloads (balance, orders, trade
+// history). On the first start with a newer policy they are deleted; ticks, candles and votes stay.
+const REDACTION_POLICY = 2;
+
 const ready: Promise<Ctx> = (async () => {
   const ledger = await openIndexedDbLedger();
-  const local = await chrome.storage.local.get(['recorder', 'lastPruneAt']);
+  const local = await chrome.storage.local.get(['recorder', 'lastPruneAt', 'redactionPolicy']);
   if (isRecorderState(local.recorder)) recorder = local.recorder;
   else recorderDirty = true;
+  if (local.redactionPolicy !== REDACTION_POLICY) {
+    const purged = await ledger.clearRawFrames();
+    recorder = { ...recorder, bytesTotal: 0 };
+    recorderDirty = true;
+    await chrome.storage.local.set({ redactionPolicy: REDACTION_POLICY });
+    if (purged > 0) await ledger.appendEvent({ ts: Date.now(), kind: 'recorder', payload: { purgedRawFrames: purged, reason: `redaction policy ${REDACTION_POLICY}: account data no longer stored` } });
+  }
   if (typeof local.lastPruneAt === 'number') lastPruneAt = local.lastPruneAt;
   const proc = new FeedProcessor({
     frames: ledger,

@@ -1,10 +1,12 @@
-// Raw-frame recorder state. On by default; a run stops itself after 24 h (BB_Qx.md: "logs raw
-// frames for 24 hours") or at a frame cap, and the panel toggles it. Pure functions over a plain
-// object so the worker can persist it in chrome.storage.local and pick it up after a restart.
+// Raw-frame recorder state. On by default; a run stops itself after 1 h or at a frame cap, and the
+// panel toggles it. BB_Qx.md asks for 24 h of raw frames to map the schema, but the first 12-minute
+// recording (2026-10-22) already mapped it; a recorded day now comes from ticks, which are far smaller.
+// Pure functions over a plain object so the worker can persist it in chrome.storage.local.
 
-export const RECORDER_MAX_MS = 24 * 3_600_000;
-// TUNABLE: 5 tabs at ~20 frames/s each for 24 h is ~8.6M; 3M frames (~1 GB) bounds disk use and export size.
-export const RECORDER_FRAME_CAP = 3_000_000;
+// TUNABLE: long enough to capture a schema change or a new event; short enough to stay around 30 MB.
+export const RECORDER_MAX_MS = 3_600_000;
+// TUNABLE: about 1 h of 5 assets at ~25 frames/s each; bounds disk use and export size.
+export const RECORDER_FRAME_CAP = 500_000;
 // TUNABLE: per-frame bookkeeping (seq, receivedAt, tabId, dir, encoding, keys) on top of data and URL lengths.
 const RECORD_OVERHEAD_BYTES = 96;
 
@@ -38,7 +40,7 @@ export function recordFrames(s: RecorderState, frames: number, bytes: number): R
   return { ...s, framesThisRun: s.framesThisRun + frames, bytesTotal: s.bytesTotal + bytes };
 }
 
-/** Turning it on starts a fresh run with its own 24 h and frame cap. */
+/** Turning it on starts a fresh run with its own time limit and frame cap. */
 export function setRecorder(s: RecorderState, on: boolean, now: number): RecorderState {
   if (on) return { ...s, on: true, startedAt: now, stoppedReason: null, framesThisRun: 0 };
   return s.on ? { ...s, on: false, stoppedReason: 'manual' } : s;

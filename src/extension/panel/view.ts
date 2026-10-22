@@ -64,7 +64,7 @@ export function recorderText(r: RecorderView): string {
     const left = r.timeLeftMs === null ? '' : ` · ${durationText(r.timeLeftMs)} left`;
     return `ON · ${int(r.framesThisRun)} / ${int(r.frameCap)} frames this run${left}`;
   }
-  const why = r.stoppedReason === 'time' ? 'stopped after 24 h' : r.stoppedReason === 'cap' ? 'stopped at frame cap' : 'stopped';
+  const why = r.stoppedReason === 'time' ? 'stopped at its time limit' : r.stoppedReason === 'cap' ? 'stopped at frame cap' : 'stopped';
   return `OFF (${why})`;
 }
 

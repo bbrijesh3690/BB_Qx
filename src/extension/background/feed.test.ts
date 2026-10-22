@@ -157,7 +157,7 @@ describe('FeedProcessor', () => {
     const { ledger, proc, recorder } = await setup();
     await proc.handleBatch(9, 0, batch([...quotes([['EURUSD_otc', T, 1.1], ['EURUSD_otc', T + 1, 1.2]]), text('42["instruments/list",[[1,"EURUSD_otc","x","c",2,87]]]')]), LOCAL);
     const snap = await buildSnapshot(proc, ledger, recorder(), LOCAL + 500);
-    expect(snap.assets).toEqual([{ asset: 'EURUSD_otc', isOTC: true, ticksStored: 2, candles1m: 0, lastTickAgeMs: 500, payout: 87, tabs: [9] }]);
+    expect(snap.assets).toEqual([{ asset: 'EURUSD_otc', name: 'x', isOTC: true, ticksStored: 2, candles1m: 0, lastTickAgeMs: 500, payout: 87, tabs: [9] }]);
     expect(snap.recorder).toMatchObject({ on: true, framesThisRun: 3, framesStored: 3 });
     expect(snap.recorder.approxMB).toBeGreaterThan(0);
     expect(snap.serverOffsetMs).toBe(2500); // median of 2000 and 3000

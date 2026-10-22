@@ -186,7 +186,7 @@ export class FrameAnalyzer {
     const pkt = parseFrame({ encoding: rec.encoding, data: rec.data });
     this.bump(this.packets, pkt.type);
     if (pkt.type === 'unknown') this.bump(this.unknownPackets, pkt.reason);
-    const key = `${rec.tabId}|${rec.socketUrl}`;
+    const key = `${rec.tabId}|${rec.socketUrl}|${rec.dir}`; // attachments follow their header in the same direction
     let asm = this.sockets.get(key);
     if (!asm) {
       asm = new BinaryAssembler();

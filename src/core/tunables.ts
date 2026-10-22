@@ -43,8 +43,8 @@ export const TUNABLES = {
     value: 21, unit: 'hour UTC', reason: 'live forex reopens Sunday 21:00 UTC (typical retail broker hours)', source: 'src/core/time.ts' },
 
   // --- retention (values from BB_Qx.md, registered so both ledgers share them) ---
-  retentionTicksMs: { // TUNABLE: BB_Qx.md ticks ring buffer
-    value: 2 * HOUR_MS, unit: 'ms', reason: 'BB_Qx.md: ticks kept as a 2-hour ring buffer per asset', source: 'src/ledger/memory.ts' },
+  retentionTicksMs: { // TUNABLE: phase 0 replay gate needs a recorded day; revisit after the gate
+    value: 26 * HOUR_MS, unit: 'ms', reason: 'BB_Qx.md says 2 h; raised for phase 0 so a full recorded day of ticks (about 100 MB for 5 assets) can be exported and replayed without keeping 24 h of raw frames (about 1 GB)', source: 'src/ledger/memory.ts' },
   retentionCandlesMs: { // TUNABLE: BB_Qx.md candle retention before thinning
     value: 30 * DAY_MS, unit: 'ms', reason: 'BB_Qx.md: 1m candles kept 30 days, then thinned to 5m', source: 'src/ledger/memory.ts' },
   retentionPayoutsMs: { // TUNABLE: BB_Qx.md payouts and feed_structure retention

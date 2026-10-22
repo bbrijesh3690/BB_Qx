@@ -85,7 +85,10 @@ export interface TabInfo {
 }
 
 export interface AssetRow {
+  /** Quotex's internal id, e.g. BRLUSD_otc. */
   asset: string;
+  /** Quotex's display name, e.g. "USD/BRL (OTC)"; null until instruments/list arrives. */
+  name: string | null;
   isOTC: boolean;
   ticksStored: number;
   candles1m: number;

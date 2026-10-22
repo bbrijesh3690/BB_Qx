@@ -12,6 +12,7 @@ import {
   type CandleRecord, type EngineStatsRecord, type EventRecord, type FeedStructureRecord, type Ledger,
   type LedgerExport, type OutcomeRecord, type PatternRecord, type SignalRecord, type Timeframe, type VoteRecord,
 } from '../core/contracts';
+import { TUNABLES } from '../core/tunables';
 
 const MIN = 60_000;
 const HOUR = 3_600_000;
@@ -555,13 +556,14 @@ export function ledgerConformance(name: string, make: () => Promise<Ledger>): vo
     describe('prune', () => {
       const NOW = T0 + 40 * DAY;
 
-      it('drops ticks older than 2 hours per asset and keeps the rest', async () => {
+      it('drops ticks older than the tick retention per asset and keeps the rest', async () => {
+        const R = TUNABLES.retentionTicksMs.value;
         const l = await make();
         const at = (asset: string, ts: number) => ({ asset, ts, price: 1 });
-        await l.appendTicks([at('A', NOW - 3 * HOUR), at('A', NOW - 2 * HOUR - 1), at('A', NOW - 2 * HOUR), at('A', NOW - HOUR), at('A', NOW)]);
-        await l.appendTicks([at('B', NOW - 5 * HOUR), at('B', NOW - 2 * HOUR - 1), at('B', NOW)]);
+        await l.appendTicks([at('A', NOW - R - HOUR), at('A', NOW - R - 1), at('A', NOW - R), at('A', NOW - HOUR), at('A', NOW)]);
+        await l.appendTicks([at('B', NOW - R - 3 * HOUR), at('B', NOW - R - 1), at('B', NOW)]);
         await l.prune(NOW);
-        expect((await l.getTicks('A')).map((t) => t.ts)).toEqual([NOW - 2 * HOUR, NOW - HOUR, NOW]);
+        expect((await l.getTicks('A')).map((t) => t.ts)).toEqual([NOW - R, NOW - HOUR, NOW]);
         expect((await l.getTicks('B')).map((t) => t.ts)).toEqual([NOW]);
       });
 
@@ -626,7 +628,7 @@ export function ledgerConformance(name: string, make: () => Promise<Ledger>): vo
       it('is idempotent', async () => {
         const l = await make();
         for (let i = 0; i < 10; i++) await l.putCandle(candle({ openTs: NOW - 31 * DAY + i * MIN }));
-        await l.appendTicks([{ asset: 'A', ts: NOW - 3 * HOUR, price: 1 }, { asset: 'A', ts: NOW, price: 1 }]);
+        await l.appendTicks([{ asset: 'A', ts: NOW - TUNABLES.retentionTicksMs.value - HOUR, price: 1 }, { asset: 'A', ts: NOW, price: 1 }]);
         await l.prune(NOW);
         const once = JSON.stringify(await l.export({ includeTicks: true }));
         await l.prune(NOW);

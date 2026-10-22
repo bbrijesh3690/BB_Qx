@@ -57,6 +57,7 @@ export interface PersistedFeed {
   decoder: DecoderStats;
   counters: Counters;
   errors: string[];
+  names?: [string, string][];
 }
 
 export class FeedProcessor {
@@ -65,7 +66,9 @@ export class FeedProcessor {
   readonly gate = new TickGate();
   private readonly tabs = new Map<number, TabState>();
   private readonly assets = new Map<string, AssetState>();
-  private readonly sockets = new Map<string, { asm: BinaryAssembler; lastSeen: number }>();
+  // One assembler per direction: a binary event's attachments follow its header in the same direction,
+  // and the page's own frames can arrive in between.
+  private readonly sockets = new Map<string, { asm: Record<'in' | 'out', BinaryAssembler>; lastSeen: number }>();
   private counters: Counters = { framesSeen: 0, duplicateTicks: 0, staleTicks: 0, unknownFrames: 0 };
   private orphanBinariesGone = 0;
   private lastClockTs = -Infinity;
@@ -101,7 +104,7 @@ export class FeedProcessor {
       const socketUrl = redactUrl(f.url);
       tab.socketUrls.add(socketUrl);
       const sock = this.socket(tabId, frameId, f.sid, now);
-      const stored = redactFrame({ encoding: f.enc, data: f.data }, sock.asm.pendingEventName()).value;
+      const stored = redactFrame({ encoding: f.enc, data: f.data }, sock.asm[f.dir].pendingEventName()).value;
       if (room > 0) {
         const r = { receivedAt: f.t, tabId, socketUrl, dir: f.dir, encoding: stored.encoding, data: stored.data };
         records.push(r);
@@ -111,7 +114,7 @@ export class FeedProcessor {
       // Decode the redacted frame, so re-decoding the recording later gives the same events.
       const pkt = parseFrame(stored);
       if (pkt.type === 'unknown') this.counters.unknownFrames++;
-      const ev = sock.asm.push(pkt);
+      const ev = sock.asm[f.dir].push(pkt);
       if (!ev) continue;
       const res = this.decoder.decode(ev, f.dir, this.serverNow(f.t));
       if (res.viewing) tab.viewing = res.viewing;
@@ -188,7 +191,7 @@ export class FeedProcessor {
   sweep(now: number): void {
     for (const [key, s] of this.sockets) {
       if (now - s.lastSeen > SOCKET_IDLE_MS) {
-        this.orphanBinariesGone += s.asm.orphanBinaries;
+        this.orphanBinariesGone += s.asm.in.orphanBinaries + s.asm.out.orphanBinaries;
         this.sockets.delete(key);
       }
     }
@@ -230,7 +233,7 @@ export class FeedProcessor {
   decodeView(): DecodeView {
     const s = this.decoder.stats;
     let orphans = this.orphanBinariesGone;
-    for (const sock of this.sockets.values()) orphans += sock.asm.orphanBinaries;
+    for (const sock of this.sockets.values()) orphans += sock.asm.in.orphanBinaries + sock.asm.out.orphanBinaries;
     return {
       ticks: s.ticks,
       duplicateTicks: this.counters.duplicateTicks,
@@ -265,6 +268,7 @@ export class FeedProcessor {
       decoder: { ...this.decoder.stats },
       counters: { ...this.counters },
       errors: [...this.errors],
+      names: [...this.decoder.names.entries()],
     };
   }
 
@@ -281,6 +285,12 @@ export class FeedProcessor {
     Object.assign(this.decoder.stats, p.decoder);
     this.counters = { ...this.counters, ...p.counters };
     this.errors = [...p.errors];
+    for (const [asset, name] of p.names ?? []) this.decoder.names.set(asset, name);
+  }
+
+  /** Quotex's display name for an asset id, once instruments/list has named it. */
+  displayName(asset: string): string | null {
+    return this.decoder.names.get(asset) ?? null;
   }
 
   // ---- internals ----
@@ -307,7 +317,7 @@ export class FeedProcessor {
     const key = `${tabId}:${frameId}:${sid}`;
     let s = this.sockets.get(key);
     if (!s) {
-      s = { asm: new BinaryAssembler(), lastSeen: now };
+      s = { asm: { in: new BinaryAssembler(), out: new BinaryAssembler() }, lastSeen: now };
       this.sockets.set(key, s);
     }
     s.lastSeen = now;

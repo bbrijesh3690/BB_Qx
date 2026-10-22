@@ -18,7 +18,7 @@ function snapshot(over: Partial<PanelSnapshot> = {}): PanelSnapshot {
   };
 }
 
-const asset = (name: string, age: number | null) => ({ asset: name, isOTC: false, ticksStored: 1, candles1m: 0, lastTickAgeMs: age, payout: null, tabs: [] });
+const asset = (name: string, age: number | null) => ({ asset: name, name: null, isOTC: false, ticksStored: 1, candles1m: 0, lastTickAgeMs: age, payout: null, tabs: [] });
 const tab = (tabId: number, viewing: string | null, assets: string[]) => ({ tabId, socketUrls: [], viewing, assets, lastFrameAt: 0, frames: 0, tap: null });
 
 describe('panel view helpers', () => {
@@ -53,7 +53,7 @@ describe('panel view helpers', () => {
 
   it('describes the recorder', () => {
     expect(recorderText(rec())).toBe('ON · 1,234 / 3,000,000 frames this run · 5h 7m left');
-    expect(recorderText(rec({ on: false, stoppedReason: 'time', timeLeftMs: null }))).toBe('OFF (stopped after 24 h)');
+    expect(recorderText(rec({ on: false, stoppedReason: 'time', timeLeftMs: null }))).toBe('OFF (stopped at its time limit)');
     expect(recorderText(rec({ on: false, stoppedReason: 'cap' }))).toBe('OFF (stopped at frame cap)');
     expect(storedText(rec())).toBe('5,678 frames stored · ~3.46 MB');
     expect(mbText(1234.4)).toBe('1,234 MB');

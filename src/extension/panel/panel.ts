@@ -38,6 +38,11 @@ function make(doc: Document) {
   };
 }
 
+function withTitle<T extends HTMLElement>(e: T, title: string): T {
+  e.title = title;
+  return e;
+}
+
 function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`${what}: no answer from the service worker after ${ms / 1000}s`)), ms);
@@ -228,7 +233,7 @@ export async function mountPanel(doc: Document, deps: PanelDeps): Promise<void> 
       for (const a of s.assets) {
         const tr = el('tr', a.tabs.includes(s.selfTabId ?? -1) ? 'self' : '',
           el('td', '', el('span', `dot ${aliveDot(a.lastTickAgeMs)}`)),
-          el('td', '', a.asset),
+          withTitle(el('td', '', a.name ?? a.asset), `Quotex id: ${a.asset}`),
           el('td', '', a.isOTC ? 'OTC' : 'live'),
           el('td', 'num', int(a.ticksStored)),
           el('td', 'num', int(a.candles1m)),
@@ -246,10 +251,11 @@ export async function mountPanel(doc: Document, deps: PanelDeps): Promise<void> 
     recBtn.textContent = s.recorder.on ? 'Stop recorder' : 'Start recorder';
 
     const tabList = el('ul');
+    const nameOf = (id: string) => s.assets.find((a) => a.asset === id)?.name ?? id;
     for (const t of s.tabs) {
       const age = s.now - t.lastFrameAt;
       const li = el('li', t.tabId === s.selfTabId ? 'muted' : '',
-        `#${t.tabId}${t.tabId === s.selfTabId ? ' (this tab)' : ''}: viewing ${t.viewing ?? '?'} · feeds ${t.assets.join(', ') || 'nothing yet'} · last frame ${ageText(t.lastFrameAt ? age : null)} ago · ${int(t.frames)} frames`,
+        `#${t.tabId}${t.tabId === s.selfTabId ? ' (this tab)' : ''}: viewing ${t.viewing ? nameOf(t.viewing) : '?'} · feeds ${t.assets.map(nameOf).join(', ') || 'nothing yet'} · last frame ${ageText(t.lastFrameAt ? age : null)} ago · ${int(t.frames)} frames`,
         t.tap ? ` · tap ${t.tap.sockets} sockets, ${t.tap.errors} errors` : '',
       );
       li.title = t.socketUrls.join('\n');
@@ -267,10 +273,11 @@ export async function mountPanel(doc: Document, deps: PanelDeps): Promise<void> 
 
     const next = defaultSpotAsset(s, spotAsset);
     const names = s.assets.map((a) => a.asset);
-    if (names.join('|') !== [...spotSelect.options].map((o) => o.value).join('|')) {
-      spotSelect.replaceChildren(...names.map((n) => {
-        const o = el('option', '', n);
-        o.value = n;
+    const labels = s.assets.map((a) => a.name ?? a.asset);
+    if (names.join('|') !== [...spotSelect.options].map((o) => o.value).join('|') || labels.join('|') !== [...spotSelect.options].map((o) => o.text).join('|')) {
+      spotSelect.replaceChildren(...s.assets.map((a) => {
+        const o = el('option', '', a.name ?? a.asset);
+        o.value = a.asset;
         return o;
       }));
     }

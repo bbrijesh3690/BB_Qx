@@ -54,7 +54,7 @@ describe('TickGate', () => {
 });
 
 describe('recorder state', () => {
-  it('starts on, stops after 24 h or at the frame cap, and restarts with a fresh run', () => {
+  it('starts on, stops at its time limit or the frame cap, and restarts with a fresh run', () => {
     let s = initialRecorder(0);
     expect(s.on).toBe(true);
     expect(allowance(s, 10)).toBe(10);

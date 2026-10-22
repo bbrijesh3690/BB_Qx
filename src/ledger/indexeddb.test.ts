@@ -11,6 +11,7 @@ import {
   type SignalRecord,
   type VoteRecord,
 } from '../core/contracts';
+import { TUNABLES } from '../core/tunables';
 import { aggregateCandles, openIndexedDbLedger, type IndexedDbLedger } from './indexeddb';
 
 const MIN = 60_000;
@@ -346,13 +347,14 @@ describe('payouts, feed structure, patterns, engine stats and state', () => {
 });
 
 describe('prune', () => {
-  it('keeps 2 h of ticks per asset and 30 d of payouts and feed structure', async () => {
+  it('keeps the tick retention per asset and 30 d of payouts and feed structure', async () => {
     const now = T0 + 10 * DAY;
+    const R = TUNABLES.retentionTicksMs.value;
     await ledger.appendTicks([
-      { asset: 'A', ts: now - 3 * HOUR, price: 1 },
-      { asset: 'A', ts: now - 2 * HOUR, price: 2 },
+      { asset: 'A', ts: now - R - HOUR, price: 1 },
+      { asset: 'A', ts: now - R, price: 2 },
       { asset: 'A', ts: now - MIN, price: 3 },
-      { asset: 'B', ts: now - 2 * HOUR - 1, price: 4 },
+      { asset: 'B', ts: now - R - 1, price: 4 },
     ]);
     await ledger.appendPayout({ asset: 'A', ts: now - 31 * DAY, percent: 80 });
     await ledger.appendPayout({ asset: 'A', ts: now - 29 * DAY, percent: 81 });

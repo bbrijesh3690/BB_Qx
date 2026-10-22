@@ -37,6 +37,7 @@ export async function buildSnapshot(proc: FeedProcessor, ledger: SnapshotLedger,
       const [ticksStored, payout] = await Promise.all([ledger.countTicks(asset), ledger.latestPayout(asset, serverNow)]);
       return {
         asset,
+        name: proc.displayName(asset),
         isOTC: isOtcAsset(asset),
         ticksStored,
         candles1m: candleCounts[`${asset}|1m`] ?? 0,

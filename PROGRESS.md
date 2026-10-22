@@ -18,9 +18,9 @@ The lead then:
 ## Current state
 
 - **Phase:** 0 (feed and ledger), with phase 1 engines started early on synthetic data only
-- **Wave:** 1 of phase 0 is merged and integrated. Waiting on the owner's first live recording.
+- **Wave:** 1 of phase 0 is merged and integrated; the first live recording (12 min, 2026-10-22) confirmed the schema.
 - **Last updated:** 2026-10-22
-- **Next:** the owner loads `dist/extension` in Chrome on `https://quotex.com/en/demo-trade`, records about an hour, and exports raw frames to `recordings/`. The lead then runs `npm run analyze-frames` on it and corrects `QUOTEX_SCHEMA` in `src/extension/quotex/decoder.ts` to the real message shapes.
+- **Next:** the owner reloads the extension, opens each of the 5+ target assets once in one Quotex window (3+ OTC, 2 live), then leaves it running 24 h. After that: export the dataset, replay it with `npm run harness -- --dataset <file>`, and do the 50-candle spot-check.
 
 ## Active work (wave 1, parallel)
 
@@ -36,9 +36,19 @@ The lead then:
 - [x] Wave 1 branches merged into `main`
 - [x] Pipeline wired into the extension service worker (lead): null, feed-structure and price-action engines run live; on worker restart, engine state, the last 1,005 minutes of candles and the latest payout are reloaded from the ledger
 - [x] `npm run check` green; harness replays a synthetic day deterministically; the IndexedDB ledger passes the same 38-test conformance suite as the in-memory one
-- [ ] Extension loads in Chrome without errors (owner)
-- [ ] One-hour raw recording reviewed; decoder mapping confirmed against real frames
+- [x] Extension loads in Chrome without errors (owner, 2026-10-22)
+- [x] Raw recording reviewed (12 min, 8,976 frames); decoder mapping confirmed against real frames. The first load ran the pre-integration build (recording started 17:20 IST, integrated build 17:23), so it showed ticks but 0 candles; replaying the recording through the core built candles correctly.
 - [ ] **Gate:** 24 h of candles and ticks on 5 assets (3 OTC); 50-candle colour spot-check; null engine scored on all; recorded day replays deterministically
+
+## What the first recording showed (2026-10-22)
+
+- Socket: `wss://ws2.quotex.com/socket.io/?EIO=3&transport=websocket`, Socket.IO v2 with binary attachments (`451-` header, then a binary frame starting 0x04).
+- `quotes/stream` rows are `[assetId, serverSeconds (fractional), price, flag]`, about 140 per minute per asset. Server time is about 0.3 s behind the local clock.
+- `instruments/list` rows are `[id, assetId, displayName, type, ?, payoutPercent, ...]`. Payout (index 5) matches the number Quotex shows and changes every few minutes (BRL/USD went 90 → 92 → 91 → 85 → 86 → 88 → 90 in 12 minutes).
+- Quotex's ids aren't always its display names: `BRLUSD_otc` is shown as "USD/BRL (OTC)". Prices (about 0.194) follow the id. The panel now shows the display name, with the id in a tooltip.
+- An asset streams from the moment it is opened once in the page and keeps streaming after switching away (11 assets in one window during the second run). So one window covers the 5-asset gate.
+- `history/list/v2` and `history/load` carry recent tick history for the opened asset (about 50 minutes). Not used yet; it could backfill candles so engines skip warmup.
+- Everything else on the socket is account data (balance, orders, trade history, settings). It is no longer stored (see decisions).
 
 ## Phase 1 (next)
 
@@ -83,6 +93,9 @@ Still open from integration:
 - 2026-10-22: Recording multiple assets: one Chrome window per asset; the recorder tags frames by tab. If the raw feed turns out to carry other assets too, one window may be enough.
 - 2026-10-22: Stack: TypeScript, esbuild for the extension bundles, Vitest, fake-indexeddb for IndexedDB tests, MV3 with a MAIN-world content script for interception.
 - 2026-10-22: Owner trades at `https://quotex.com/en/demo-trade`. Shadow running starts on the demo account. Payouts on demo may differ from a real account, so the payout recorded with each vote is whatever the demo page shows; check this before comparing against real-account break-even.
+- 2026-10-22: Privacy: raw frames keep full payloads only for market events (`MARKET_EVENTS` in `src/extension/quotex/redact.ts`). Other events keep only their name; unpaired binary attachments are dropped whole. Raw frames stored under the old policy are deleted on the first start of the new build. Checked against the real recording: market data decodes identically, and no account data is left.
+- 2026-10-22: Raw recorder runs 1 h (cap 500k frames) instead of 24 h. The schema is mapped, and raw frames cost about 27 MB/hour. Ticks are kept 26 h instead of BB_Qx.md's 2 h, so a recorded day can be exported and replayed (about 100 MB for 5 assets). Revisit after the phase 0 gate.
+- 2026-10-22: Binary attachments are paired per direction. The page's own outgoing frames can fall between an incoming header and its attachment; one shared assembler lost 6 frames in the first recording.
 - 2026-10-22: Engines get a seed through `EngineFactory` so a harness run is fully determined by (source, engines, seed).
 
 ## Open questions for the owner

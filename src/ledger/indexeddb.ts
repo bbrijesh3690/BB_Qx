@@ -8,6 +8,7 @@
 // export() returns every array in IndexedDB key order (numbers before strings, arrays compared
 // element by element), which is what "sorted by store key" means for compound keys.
 
+import { TUNABLES } from '../core/tunables';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import {
   LedgerConflictError,
@@ -36,8 +37,8 @@ import {
 const DB_VERSION = 1;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
-// Retention from BB_Qx.md ("IndexedDB stores"); not assumptions, so not TUNABLE.
-const TICK_RETENTION_MS = 2 * HOUR_MS;
+// Retention from BB_Qx.md ("IndexedDB stores"), except ticks (see tunables.ts).
+const TICK_RETENTION_MS = TUNABLES.retentionTicksMs.value; // TUNABLE: retentionTicksMs, shared with the in-memory ledger
 const CANDLE_RETENTION_MS = 30 * DAY_MS;
 const PAYOUT_RETENTION_MS = 30 * DAY_MS;
 const FEED_STRUCTURE_RETENTION_MS = 30 * DAY_MS;
@@ -444,6 +445,13 @@ export class IndexedDbLedger implements Ledger {
 
   async countRawFrames(): Promise<number> {
     return this.db.count('raw_frames');
+  }
+
+  /** Deletes every stored raw frame and returns how many there were. */
+  async clearRawFrames(): Promise<number> {
+    const n = await this.db.count('raw_frames');
+    await this.db.clear('raw_frames');
+    return n;
   }
 
   async countTicks(asset: string): Promise<number> {

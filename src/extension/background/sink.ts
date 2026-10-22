@@ -38,7 +38,7 @@ export async function createPipelineSink(ledger: Ledger, wallNow: number, engine
       problems.push(`restore ${e.id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  const pipeline = new Pipeline({ ledger, engines, tf: '1m', partialStartToleranceMs: TUNABLES.partialStartToleranceMs.value });
+  const pipeline = new Pipeline({ ledger, engines, tf: '1m', partialStartToleranceMs: TUNABLES.partialStartToleranceMs.value }); // TUNABLE: partialStartToleranceMs
   const fromTs = wallNow - (TUNABLES.contextCandles.value + 5) * MIN_MS;
   let restoredAssets = 0;
   try {

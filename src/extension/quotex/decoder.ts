@@ -105,6 +105,8 @@ export class QuotexDecoder {
   };
   /** Event names not in the mapping table, keyed "in name" / "out name". */
   readonly unknown = new Map<string, number>();
+  /** Quotex's display name per asset id, e.g. BRLUSD_otc -> "USD/BRL (OTC)". The id is Quotex's own code. */
+  readonly names = new Map<string, string>();
   private readonly lastPayout = new Map<string, { percent: number; ts: number }>();
 
   /** `serverNow` is the best current estimate of server time (local clock + offset). */
@@ -177,6 +179,8 @@ export class QuotexDecoder {
     for (const r of payload) {
       const asset = Array.isArray(r) ? r[row.asset] : undefined;
       const percent = Array.isArray(r) ? r[row.payoutPercent] : undefined;
+      const name = Array.isArray(r) ? r[row.name] : undefined;
+      if (isAsset(asset) && typeof name === 'string' && name.length > 0 && name.length <= 64) this.names.set(asset, name);
       if (!isAsset(asset) || !isNum(percent) || percent < 0 || percent > 100) {
         this.stats.payoutsRejected++;
         continue;
