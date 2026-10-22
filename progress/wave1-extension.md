@@ -4,7 +4,7 @@ Feed + extension agent. Branch `wave1/extension`. Tick items as they land (tests
 
 - [x] 1. IndexedDB ledger (`src/ledger/indexeddb.ts`) with tests
 - [x] 2. Socket.IO / Engine.IO parser (`src/extension/quotex/socketio.ts`)
-- [ ] 3. Quotex decoder (`src/extension/quotex/decoder.ts`) with hypothesis mapping table
+- [x] 3. Quotex decoder (`src/extension/quotex/decoder.ts`) with hypothesis mapping table
 - [ ] 4. Redaction (`src/extension/quotex/redact.ts`)
 - [ ] 5. Interception (`src/extension/inject.ts`, `src/extension/content.ts`)
 - [ ] 6. Service worker (`src/extension/background/*.ts`)
