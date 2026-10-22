@@ -1,6 +1,6 @@
 {
   "name": "bb-qx",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "description": "Quorum (codename BB_Qx): shadow-mode next-candle evidence system for Quotex, as a Chrome MV3 extension",
   "type": "module",

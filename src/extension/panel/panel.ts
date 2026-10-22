@@ -14,6 +14,9 @@ const SPOT_POLL_MS = 5_000; // TUNABLE: spot-check list refresh while it is open
 const REQUEST_TIMEOUT_MS = 5_000; // TUNABLE: a worker that has not answered by now is reported as not responding
 const SPOT_CANDLES = 50;
 
+declare const __QUORUM_BUILD__: string | undefined; // set by scripts/build-extension.mjs
+const BUILD_STAMP = typeof __QUORUM_BUILD__ === 'string' ? __QUORUM_BUILD__ : 'dev build';
+
 export interface PanelPrefs {
   x: number | null;
   y: number | null;
@@ -63,7 +66,10 @@ export async function mountPanel(doc: Document, deps: PanelDeps): Promise<void> 
   const summary = el('span', 'sum', 'starting…');
   const collapseBtn = el('button', 'icon', '–');
   collapseBtn.title = 'Collapse / expand';
-  const head = el('div', 'head', dot, el('b', '', 'Quorum'), summary, collapseBtn);
+  const title = el('b', '', 'Quorum');
+  title.title = BUILD_STAMP;
+  const head = el('div', 'head', dot, title, summary, collapseBtn);
+  const buildLine = el('div', 'muted', BUILD_STAMP);
 
   const banner = el('div', 'banner');
   const assetsBox = el('section');
@@ -80,7 +86,7 @@ export async function mountPanel(doc: Document, deps: PanelDeps): Promise<void> 
   const spot = el('details', '', el('summary', '', `Spot-check: last ${SPOT_CANDLES} 1m candles (UTC)`), spotSelect, spotTable);
   const connBox = el('section', 'muted');
   const errBox = el('section', 'errs');
-  const body = el('div', 'body', banner, assetsBox, recBox, tabsBox, decodeBox, spot, connBox, errBox);
+  const body = el('div', 'body', banner, assetsBox, recBox, tabsBox, decodeBox, spot, connBox, errBox, buildLine);
   const panel = el('div', 'panel', head, body);
   root.append(style, panel);
 
