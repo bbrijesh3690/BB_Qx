@@ -145,12 +145,16 @@ export class CandleBuilder {
   onFeedCandle(asset: string, isOTC: boolean, tf: Timeframe, candle: Candle): void {
     if (tf !== this.tf) return;
     const s = this.state(asset, isOTC);
-    const valid = [candle.openTs, candle.open, candle.high, candle.low, candle.close].every(Number.isFinite);
-    if (!valid || candle.openTs % this.tfMs !== 0) { s.drops.invalid++; return; }
+    if (!isValidCandle(candle, tf)) { s.drops.invalid++; return; }
     const c = freezeCandle(candle);
     const stillOpen = (s.forming !== null && c.openTs >= s.forming.openTs) || c.openTs + this.tfMs > this.nowTs;
     if (stillOpen) s.pendingFeed.set(c.openTs, c);
     else this.mergeFeed(s, c);
+  }
+
+  /** Open time of the candle in progress, or null. */
+  formingOpenTs(asset: string): number | null {
+    return this.states.get(asset)?.forming?.openTs ?? null;
   }
 
   /** The candle in progress for an asset, or null. */
@@ -278,6 +282,11 @@ export class CandleBuilder {
     }
     return i;
   }
+}
+
+/** Finite prices and an open time on the timeframe's boundary. */
+export function isValidCandle(c: Candle, tf: Timeframe): boolean {
+  return [c.openTs, c.open, c.high, c.low, c.close].every(Number.isFinite) && c.openTs % TF_MS[tf] === 0;
 }
 
 function relDiff(a: number, b: number): number {
