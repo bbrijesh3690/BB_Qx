@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.*
+
+# Recorded Quotex frames and datasets stay local
+recordings/
+datasets/raw/
