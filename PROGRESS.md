@@ -48,10 +48,11 @@ Scoreboard counters, stacker with signal rule and kill switch, panel with votes,
 - 2026-10-22: A vote predicts the next candle (the one opening at the current candle's close), frozen at T-5s and scored at that candle's close: WIN, LOSS, or TIE when close equals open.
 - 2026-10-22: Recording multiple assets: one Chrome window per asset; the recorder tags frames by tab. If the raw feed turns out to carry other assets too, one window may be enough.
 - 2026-10-22: Stack: TypeScript, esbuild for the extension bundles, Vitest, fake-indexeddb for IndexedDB tests, MV3 with a MAIN-world content script for interception.
+- 2026-10-22: Owner trades at `https://quotex.com/en/demo-trade`. Shadow running starts on the demo account. Payouts on demo may differ from a real account, so the payout recorded with each vote is whatever the demo page shows; check this before comparing against real-account break-even.
 - 2026-10-22: Engines get a seed through `EngineFactory` so a harness run is fully determined by (source, engines, seed).
 
 ## Open questions for the owner
 
-1. Exact URL of the Quotex trading page in the address bar (the manifest matches quotex.io, qxbroker.com and quotex.com for now).
+1. ~~Exact URL of the Quotex trading page~~ Answered 2026-10-22: `https://quotex.com/en/demo-trade` (demo account). Covered by the manifest's `https://quotex.com/*` match; quotex.io and qxbroker.com stay in the list as harmless extras.
 2. The 7 open questions at the end of BB_Qx.md; defaults are in use until answered.
 3. Pattern-discovery validation rule (phase 2): the rule as written validated 3 to 18 patterns per 20,000 coin-flip candles in a quick simulation; a 3-sigma lower bound on window-B accuracy validated none. The bounded k = 0.08 feed's 53.3% edge is below p* at 85% payout (54.1%), which conflicts with the definition of done.
