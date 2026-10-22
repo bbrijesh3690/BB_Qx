@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 coverage/
 *.log
@@ -10,3 +10,6 @@ Thumbs.db
 # Recorded Quotex frames and datasets stay local
 recordings/
 datasets/raw/
+
+# Agent worktrees
+.claude/worktrees/
