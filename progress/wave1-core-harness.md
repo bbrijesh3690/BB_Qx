@@ -8,7 +8,7 @@ Branch: `wave1/core-harness`. Owner: core + harness agent. Tick each item in the
 - [x] 4. Pipeline (src/core/pipeline.ts)
 - [x] 5. Null engine (src/engines/null.ts)
 - [x] 6. Synthetic generators (src/harness/generators.ts)
-- [ ] 7. Harness: sources.ts, run.ts, registry.ts, cli.ts
+- [x] 7. Harness: sources.ts, run.ts, registry.ts, cli.ts
 - [ ] 8a. Tests: determinism (synthetic and recorded replay)
 - [x] 8b. Tests: pipeline (freeze, no look-ahead, scoring, ties, gaps, warmup, throwing engine)
 - [ ] 8c. Tests: null engine on 20,000 random-walk candles
