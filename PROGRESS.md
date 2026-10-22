@@ -18,23 +18,24 @@ The lead then:
 ## Current state
 
 - **Phase:** 0 (feed and ledger), with phase 1 engines started early on synthetic data only
-- **Wave:** 1 of phase 0
+- **Wave:** 1 of phase 0 is merged and integrated. Waiting on the owner's first live recording.
 - **Last updated:** 2026-10-22
+- **Next:** the owner loads `dist/extension` in Chrome on `https://quotex.com/en/demo-trade`, records about an hour, and exports raw frames to `recordings/`. The lead then runs `npm run analyze-frames` on it and corrects `QUOTEX_SCHEMA` in `src/extension/quotex/decoder.ts` to the real message shapes.
 
 ## Active work (wave 1, parallel)
 
 | Branch | Agent | Scope | Status |
 | --- | --- | --- | --- |
 | `wave1/extension` | Feed + extension | MV3 manifest, WebSocket interception, raw-frame recorder, Quotex frame decoder, IndexedDB ledger, minimal panel, dataset export, build script | **merged** into main 2026-10-22 (122 tests green, `npm run build:ext` OK) |
-| `wave1/core-harness` | Core + harness | rng, time, tunables, candle builder, pipeline (freeze at T-5s, scoring), in-memory ledger, ledger conformance suite, null engine, 4 synthetic generators, harness runner and CLI, evidence regression tests | items 1-6 and 8b pushed; resumed after the usage limit for 7, 8a, 8c-8e |
+| `wave1/core-harness` | Core + harness | rng, time, tunables, candle builder, pipeline (freeze at T-5s, scoring), in-memory ledger, ledger conformance suite, null engine, 4 synthetic generators, harness runner and CLI, evidence regression tests | **merged** into main 2026-10-22 (resumed once after a usage limit; no work lost) |
 | `wave1/engines` | Engines | Feature library (one per indicator family), feed-structure engine, price action engine | **merged** into main 2026-10-22 (65 tests green) |
 
 ## Phase 0 checklist
 
 - [x] Repository, contracts and resume files (lead)
-- [ ] Wave 1 branches merged into `main`
-- [ ] Pipeline wired into the extension service worker (lead)
-- [ ] `npm run check` green; harness replays a synthetic day deterministically
+- [x] Wave 1 branches merged into `main`
+- [x] Pipeline wired into the extension service worker (lead): null, feed-structure and price-action engines run live; on worker restart, engine state, the last 1,005 minutes of candles and the latest payout are reloaded from the ledger
+- [x] `npm run check` green; harness replays a synthetic day deterministically; the IndexedDB ledger passes the same 38-test conformance suite as the in-memory one
 - [ ] Extension loads in Chrome without errors (owner)
 - [ ] One-hour raw recording reviewed; decoder mapping confirmed against real frames
 - [ ] **Gate:** 24 h of candles and ticks on 5 assets (3 OTC); 50-candle colour spot-check; null engine scored on all; recorded day replays deterministically
@@ -53,11 +54,28 @@ Follow-ups for wave 2 (lead):
 - `FeedStructure` has no trend sign; consider adding a signed drift field in phase 1.
 - Consolidate `src/engines/stats-tracker.ts` with the null engine's tracker; register the engines' and the extension's TUNABLEs in `src/core/tunables.ts`.
 
-Integration notes (lead, when core-harness lands):
-- Replace `createSink` in `src/extension/background/sink.ts` with the core `Pipeline` (null, feed-structure, price-action engines).
-- On worker restart, reload each asset's closed candles from the ledger into the pipeline and restore engine state, so engines don't sit in warmup again (feed-structure needs 200 candles, about 3.3 h).
-- Run the conformance suite (`src/ledger/conformance.ts`) against the IndexedDB ledger. The extension agent's choices to check: `listSignals` filters on `ts`; votes sorted by (candleOpenTs, voteId); event seq starts at 1; `engine_stats` export puts numeric buckets before `'all'`; `listAssets` comes from candles and votes.
+Integration (done 2026-10-22):
+- `src/extension/background/sink.ts`: `createPipelineSink` is the runtime sink. `createDirectSink` stays for feed-processor tests.
+- The first candle per asset after a page load or worker restart is dropped when its first tick came more than 3 s after its open (`partialStartToleranceMs`). Otherwise its open and colour would be wrong. The feed's own candle for that minute is still used when one exists.
+- Conformance choices accepted as the contract's meaning: `listSignals` filters on `ts`; votes with the same candleOpenTs sort by voteId; event seq starts at 1; `engine_stats` export puts numeric buckets before `'all'`; ticks are pruned at `now - 2h`.
 - `npm run analyze-frames -- <raw.ndjson> --dataset out.ndjson` builds a full-recording dataset from raw frames (the ledger keeps only 2 h of ticks).
+
+Harness results, wave 1 engines (seed 2, 20,000 candles per asset, 2 OTC + 2 live assets, `npm run harness -- --source <feed> --candles 20000 --seed 2 --engines feed-structure,price-action`):
+
+| Feed | Null OTC / live | Price action OTC | Price action live |
+| --- | --- | --- | --- |
+| random walk | 50.1% / 49.9% (n ≈ 39,300 each) | votes on 0.6% of candles; 49.3% (n = 223), building sample | 50.8% (n = 236), building sample |
+| bounded k = 0.08 | 50.0% / 50.0% | 55.7% (n = 6,689, 95% CI 54.5-56.9) | 56.0% (n = 6,705, CI 54.8-57.2) |
+| trending | 50.3% / 49.9% | 56.3% (n = 23,002, CI 55.6-56.9) | 56.2% (n = 23,343, CI 55.6-56.9) |
+| regime switching | 50.1% / 50.0% | 55.1% (n = 8,498, CI 54.0-56.2) | 53.6% (n = 7,518, CI 52.4-54.7) |
+
+These are synthetic feeds with the structure built in; they show the engines can find structure when it exists and stay at 50% when it doesn't. They say nothing yet about Quotex.
+
+Still open from integration:
+- `stats-tracker.ts` (engines) and the null engine's tracker are still separate; consolidate in phase 1 with the scoreboard.
+- The extension's and engines' TUNABLEs are marked in code but not yet listed in `src/core/tunables.ts`.
+- Engine `reload` events use the local clock for `ts` (the server offset isn't known yet at worker start).
+- A harness run with feed-structure takes about 2 minutes per 20,000-candle feed; fine for now.
 
 ## Decisions log
 

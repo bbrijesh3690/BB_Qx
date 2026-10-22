@@ -17,6 +17,9 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
 export const TUNABLES = {
+  // --- extension runtime ---
+  partialStartToleranceMs: { // TUNABLE: the first candle seen after a page load or worker restart started without us
+    value: 3000, unit: 'ms', reason: 'first candle per asset is dropped when its first tick came this long after its open, so its open and colour would be wrong', source: 'src/extension/background/sink.ts' },
   // --- pipeline ---
   freezeBeforeCloseMs: { // TUNABLE: BB_Qx.md freezes decisions at T-5s; shorter leaves no time to act live
     value: 5000, unit: 'ms', reason: 'BB_Qx.md freezes decisions at T-5s before close', source: 'src/core/pipeline.ts' },

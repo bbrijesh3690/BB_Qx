@@ -8,7 +8,7 @@ import { openIndexedDbLedger, type IndexedDbLedger } from '../../ledger/indexedd
 import { FEED_PORT, isTapMessage, type PanelRequest, type PanelSnapshot, type PortMessage } from '../shared/messages';
 import { FeedProcessor, type PersistedFeed } from './feed';
 import { checkRecorder, initialRecorder, isRecorderState, setRecorder, type RecorderState } from './recorder';
-import { createSink } from './sink';
+import { createPipelineSink } from './sink';
 import { buildSnapshot, candleRows } from './snapshot';
 
 const CLOCK_MS = 1_000; // the brief: a clock event every second while any feed is active
@@ -34,7 +34,7 @@ const ready: Promise<Ctx> = (async () => {
   if (typeof local.lastPruneAt === 'number') lastPruneAt = local.lastPruneAt;
   const proc = new FeedProcessor({
     frames: ledger,
-    sink: createSink(ledger),
+    sink: await createPipelineSink(ledger, Date.now()),
     getRecorder: () => recorder,
     setRecorder: (s) => updateRecorder(s, ledger, proc),
   });

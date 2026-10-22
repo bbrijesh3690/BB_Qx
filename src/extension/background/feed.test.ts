@@ -6,7 +6,7 @@ import { bytesToBase64, utf8Encode } from '../quotex/bytes';
 import { FEED_CHANNEL, type TapBatch, type TapFrame } from '../shared/messages';
 import { FeedProcessor } from './feed';
 import { initialRecorder, RECORDER_FRAME_CAP, setRecorder, type RecorderState } from './recorder';
-import { createSink, type FeedSink } from './sink';
+import { createDirectSink, type FeedSink } from './sink';
 import { buildSnapshot, candleRows } from './snapshot';
 
 const URL_A = 'wss://ws2.qxbroker.com/socket.io/?EIO=3&transport=websocket';
@@ -20,7 +20,7 @@ async function setup(opts: { recorder?: RecorderState; sink?: (l: IndexedDbLedge
   let recorder = opts.recorder ?? initialRecorder(LOCAL);
   const proc = new FeedProcessor({
     frames: ledger,
-    sink: opts.sink ? opts.sink(ledger) : createSink(ledger),
+    sink: opts.sink ? opts.sink(ledger) : createDirectSink(ledger),
     getRecorder: () => recorder,
     setRecorder: (s) => (recorder = s),
   });

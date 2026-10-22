@@ -4,7 +4,7 @@ import { openIndexedDbLedger } from '../../ledger/indexeddb';
 import { median, OffsetEstimator } from './clock';
 import { TickGate } from './dedupe';
 import { allowance, checkRecorder, initialRecorder, recordFrames, RECORDER_MAX_MS, setRecorder, timeLeftMs } from './recorder';
-import { createSink } from './sink';
+import { createDirectSink } from './sink';
 
 describe('OffsetEstimator', () => {
   it('is null before any tick and the median of server minus local after', () => {
@@ -74,10 +74,10 @@ describe('recorder state', () => {
   });
 });
 
-describe('createSink (phase 0 seam)', () => {
+describe('createDirectSink', () => {
   it('writes ticks on flush, payouts and feed candles immediately, and ignores clock events', async () => {
     const ledger = await openIndexedDbLedger('sink-test');
-    const sink = createSink(ledger);
+    const sink = createDirectSink(ledger);
     await sink.onEvent({ kind: 'tick', asset: 'A_otc', isOTC: true, ts: 1, price: 1.5 });
     await sink.onEvent({ kind: 'tick', asset: 'A_otc', isOTC: true, ts: 1, price: 1.6 });
     await sink.onEvent({ kind: 'payout', asset: 'A_otc', isOTC: true, ts: 5, percent: 88 });

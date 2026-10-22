@@ -16,9 +16,9 @@ describe('harness', () => {
     expect(e.candles.length).toBe(2 * 29);
   });
 
-  it('registry knows null and rejects unknown ids', () => {
-    expect(engineFactories(['null'])).toHaveLength(1);
-    expect(() => engineFactories(['nope'])).toThrow(/unknown engine 'nope'; known: null/);
+  it('registry knows every built engine and rejects unknown ids', () => {
+    expect(engineFactories(['null', 'feed-structure', 'price-action'])).toHaveLength(3);
+    expect(() => engineFactories(['nope'])).toThrow(/unknown engine 'nope'; known: feed-structure, null, price-action/);
   });
 
   it('recordedSource round-trips a synthetic dataset and rejects malformed files', () => {

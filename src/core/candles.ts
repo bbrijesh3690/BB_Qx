@@ -7,6 +7,10 @@
 // - Server time is global: a tick of any asset or a clock event past a boundary closes every
 //   forming candle whose close time it passed.
 // - A minute with no ticks produces no candle and a gap effect.
+// - With partialStartToleranceMs set, the first candle per asset is dropped when its first tick came
+//   later than that after its open: the builder started mid-candle (page load, worker restart) and
+//   never saw the real open.
+// - preload() puts stored history back after a restart without emitting effects.
 // - Feed candles win over rebuilt ones. When both exist for a key and differ by more than the
 //   tolerance (or in colour), a mismatch effect is emitted.
 //
@@ -26,7 +30,7 @@ export type BuilderEffect =
       feed: Candle; rebuilt: Candle; maxRelDiff: number; colourDiffers: boolean;
     };
 
-export interface DropCounts { duplicate: number; outOfOrder: number; late: number; invalid: number }
+export interface DropCounts { duplicate: number; outOfOrder: number; late: number; invalid: number; partial: number }
 
 export interface CandleBuilderOptions {
   tf: Timeframe;
@@ -34,9 +38,11 @@ export interface CandleBuilderOptions {
   historyCap?: number;
   /** Relative OHLC difference above which feed and rebuilt candles count as a mismatch. */
   mismatchRelTol?: number;
+  /** Drop the first candle per asset if its first tick came later than this after its open. Off when undefined. */
+  partialStartToleranceMs?: number;
 }
 
-interface Forming { openTs: number; open: number; high: number; low: number; close: number; tickCount: number }
+interface Forming { openTs: number; open: number; high: number; low: number; close: number; tickCount: number; partial: boolean }
 
 interface AssetState {
   asset: string;
@@ -48,6 +54,8 @@ interface AssetState {
   ticks: Tick[];
   /** openTs of the latest candle built from ticks, for gap detection. */
   lastOpenTs: number | null;
+  /** A candle has been started from live ticks since this builder was created. */
+  liveStarted: boolean;
   // Closed history, oldest first, as parallel arrays. `candles` holds the winning version (feed over rebuilt).
   candles: Candle[];
   sources: CandleSource[];
@@ -68,6 +76,7 @@ export class CandleBuilder {
   private readonly tfMs: number;
   private readonly historyCap: number;
   private readonly relTol: number;
+  private readonly partialTol: number | undefined;
   private readonly states = new Map<string, AssetState>();
   private effects: BuilderEffect[] = [];
   private nowTs = -Infinity;
@@ -77,6 +86,7 @@ export class CandleBuilder {
     this.tfMs = TF_MS[opts.tf];
     this.historyCap = opts.historyCap ?? TUNABLES.contextCandles.value;
     this.relTol = opts.mismatchRelTol ?? TUNABLES.candleMismatchRelTol.value; // TUNABLE: candleMismatchRelTol
+    this.partialTol = opts.partialStartToleranceMs;
   }
 
   /** Latest server time seen (ticks and advance calls). */
@@ -116,7 +126,9 @@ export class CandleBuilder {
           missing: (openTs - s.lastOpenTs - this.tfMs) / this.tfMs,
         });
       }
-      s.forming = { openTs, open: price, high: price, low: price, close: price, tickCount: 1 };
+      const partial = !s.liveStarted && this.partialTol !== undefined && ts - openTs > this.partialTol;
+      s.liveStarted = true;
+      s.forming = { openTs, open: price, high: price, low: price, close: price, tickCount: 1, partial };
       s.ticks = [Object.freeze({ ts, price })];
       s.lastOpenTs = openTs;
     } else {
@@ -160,7 +172,7 @@ export class CandleBuilder {
   /** The candle in progress for an asset, or null. */
   forming(asset: string): Candle | null {
     const f = this.states.get(asset)?.forming;
-    return f ? { ...f } : null;
+    return f ? { openTs: f.openTs, open: f.open, high: f.high, low: f.low, close: f.close, tickCount: f.tickCount } : null;
   }
 
   /** Ticks of the forming candle, oldest first. */
@@ -183,7 +195,26 @@ export class CandleBuilder {
 
   dropCounts(asset: string): DropCounts {
     const d = this.states.get(asset)?.drops;
-    return d ? { ...d } : { duplicate: 0, outOfOrder: 0, late: 0, invalid: 0 };
+    return d ? { ...d } : { duplicate: 0, outOfOrder: 0, late: 0, invalid: 0, partial: 0 };
+  }
+
+  /**
+   * Restores closed history (for example from the ledger after a worker restart) without emitting
+   * effects. Only for an asset with no forming candle. Later live ticks continue after it; a jump
+   * from the newest preloaded candle to the first live one is reported as a gap.
+   */
+  preload(asset: string, isOTC: boolean, history: readonly { candle: Candle; source: CandleSource }[]): void {
+    const s = this.state(asset, isOTC);
+    if (s.forming) throw new Error(`candles: preload for ${asset} while a candle is forming`);
+    for (const { candle, source } of history) {
+      if (!isValidCandle(candle, this.tf)) { s.drops.invalid++; continue; }
+      const c = freezeCandle(candle);
+      const i = this.insert(s, c, source);
+      if (i < 0) continue;
+      if (source === 'rebuilt') s.rebuilt[i] = c;
+      s.lastOpenTs = Math.max(s.lastOpenTs ?? -Infinity, c.openTs);
+      s.floorTs = Math.max(s.floorTs, c.openTs + this.tfMs);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -192,9 +223,9 @@ export class CandleBuilder {
     let s = this.states.get(asset);
     if (!s) {
       s = {
-        asset, isOTC, lastTickTs: -Infinity, floorTs: -Infinity, forming: null, ticks: [], lastOpenTs: null,
+        asset, isOTC, lastTickTs: -Infinity, floorTs: -Infinity, forming: null, ticks: [], lastOpenTs: null, liveStarted: false,
         candles: [], sources: [], rebuilt: [], mismatchLogged: [], pendingFeed: new Map(),
-        drops: { duplicate: 0, outOfOrder: 0, late: 0, invalid: 0 },
+        drops: { duplicate: 0, outOfOrder: 0, late: 0, invalid: 0, partial: 0 },
       };
       this.states.set(asset, s);
     }
@@ -202,10 +233,21 @@ export class CandleBuilder {
   }
 
   private closeForming(s: AssetState): void {
+    const partial = s.forming!.partial;
     const c = freezeCandle(s.forming!);
     s.forming = null;
     s.ticks = [];
     s.floorTs = c.openTs + this.tfMs;
+    if (partial) {
+      // The rebuilt version is wrong, but the feed's own candle for this minute, if any, is whole.
+      s.drops.partial++;
+      const feed = s.pendingFeed.get(c.openTs);
+      if (feed) {
+        s.pendingFeed.delete(c.openTs);
+        this.mergeFeed(s, feed);
+      }
+      return;
+    }
     this.effects.push({ kind: 'closed', candle: { asset: s.asset, isOTC: s.isOTC, tf: this.tf, ...c, source: 'rebuilt' } });
     const i = this.insert(s, c, 'rebuilt');
     if (i >= 0) {

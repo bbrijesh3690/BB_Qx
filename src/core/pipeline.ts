@@ -19,8 +19,8 @@
 
 import {
   bucketOf, isFeedStructureEngine, TF_MS, voteIdOf,
-  type Candle, type Context, type Engine, type EventKind, type FeedStructure, type FeedStructureEngine, type Ledger,
-  type MarketEvent, type MarketEventSink, type Outcome, type Tick, type TickRecord, type Timeframe, type Vote, type VoteRecord,
+  type Candle, type CandleRecord, type Context, type Engine, type EventKind, type FeedStructure, type FeedStructureEngine, type Ledger,
+  type MarketEvent, type MarketEventSink, type Outcome, type PayoutRecord, type Tick, type TickRecord, type Timeframe, type Vote, type VoteRecord,
   NEUTRAL_FEED,
 } from './contracts';
 import { CandleBuilder, isValidCandle } from './candles';
@@ -39,6 +39,8 @@ export interface PipelineOptions {
   defaultPayoutPercent?: number;
   tickBatchSize?: number;
   candleMismatchRelTol?: number;
+  /** Drop the first candle per asset when it started before the pipeline did (see CandleBuilder). */
+  partialStartToleranceMs?: number;
 }
 
 interface AssetRuntime {
@@ -111,6 +113,7 @@ export class Pipeline implements MarketEventSink {
       tf: this.tf,
       historyCap: this.contextCandles,
       ...(opts.candleMismatchRelTol !== undefined ? { mismatchRelTol: opts.candleMismatchRelTol } : {}),
+      ...(opts.partialStartToleranceMs !== undefined ? { partialStartToleranceMs: opts.partialStartToleranceMs } : {}),
     });
   }
 
@@ -146,6 +149,16 @@ export class Pipeline implements MarketEventSink {
         await this.drainBuilder();
         return;
     }
+  }
+
+  /**
+   * Restores an asset's stored candles and latest payout after a restart, so engines don't start
+   * their warmup again. Writes nothing to the ledger. Call before any event for that asset.
+   */
+  preload(asset: string, isOTC: boolean, candles: readonly CandleRecord[], payout: PayoutRecord | null): void {
+    this.runtime(asset, isOTC);
+    this.builder.preload(asset, isOTC, candles.filter((c) => c.tf === this.tf).map((c) => ({ candle: c, source: c.source })));
+    if (payout && Number.isFinite(payout.percent)) this.applyPayout(asset, isOTC, payout.ts, payout.percent);
   }
 
   /** Writes buffered ticks. Call at the end of a run. Votes whose candle has not closed stay unscored. */

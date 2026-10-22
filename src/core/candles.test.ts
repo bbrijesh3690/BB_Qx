@@ -41,7 +41,7 @@ describe('CandleBuilder', () => {
     expect(b.onTick(B, false, T + 5 * S, 1.3)).toBe(true);  // other asset unaffected
     expect(b.onTick(A, true, T + 11 * S, 1.4)).toBe(true);
     expect(b.forming(A)).toMatchObject({ open: 1.1, close: 1.4, tickCount: 2 });
-    expect(b.dropCounts(A)).toEqual({ duplicate: 1, outOfOrder: 1, late: 0, invalid: 0 });
+    expect(b.dropCounts(A)).toEqual({ duplicate: 1, outOfOrder: 1, late: 0, invalid: 0, partial: 0 });
   });
 
   it('a clock advance past the boundary closes the candle; later ticks for it are dropped as late', () => {
@@ -177,5 +177,57 @@ describe('CandleBuilder', () => {
     b.advance(T + M);
     expect(Object.isFrozen(b.closed(A)[0])).toBe(true);
     expect(Object.isFrozen(b.formingTicks(A))).toBe(false);
+  });
+});
+
+describe('CandleBuilder start-up and restore', () => {
+  it('drops the first candle when it started before the builder did, and keeps the ones after', () => {
+    const b = new CandleBuilder({ tf: '1m', partialStartToleranceMs: 3 * S });
+    b.onTick(A, true, T + 20 * S, 1.1); // page opened 20 s into the minute: the real open was missed
+    b.onTick(A, true, T + 50 * S, 1.2);
+    b.onTick(A, true, T + M, 1.2);
+    b.onTick(A, true, T + M + 30 * S, 1.3);
+    b.advance(T + 2 * M);
+    expect(closedOf(b.drain()).map((c) => c.openTs)).toEqual([T + M]);
+    expect(b.dropCounts(A).partial).toBe(1);
+  });
+
+  it('keeps the first candle when its first tick is within the tolerance, and is off by default', () => {
+    const tolerant = new CandleBuilder({ tf: '1m', partialStartToleranceMs: 3 * S });
+    tolerant.onTick(A, true, T + 2 * S, 1.1);
+    tolerant.advance(T + M);
+    expect(closedOf(tolerant.drain())).toHaveLength(1);
+    const off = new CandleBuilder({ tf: '1m' });
+    off.onTick(A, true, T + 40 * S, 1.1);
+    off.advance(T + M);
+    expect(closedOf(off.drain())).toHaveLength(1);
+  });
+
+  it("uses the feed's own candle for a dropped partial minute", () => {
+    const b = new CandleBuilder({ tf: '1m', partialStartToleranceMs: 3 * S });
+    b.onTick(A, true, T + 20 * S, 1.1);
+    b.onFeedCandle(A, true, '1m', { openTs: T, open: 1.0, high: 1.2, low: 0.9, close: 1.1, tickCount: 60 });
+    b.advance(T + M);
+    expect(b.closedCandle(A, T)).toEqual({ candle: expect.objectContaining({ open: 1.0, close: 1.1 }), source: 'feed' });
+  });
+
+  it('preloads history silently, then reports the gap to the first live candle', () => {
+    const b = new CandleBuilder({ tf: '1m', partialStartToleranceMs: 3 * S });
+    const hist = [0, 1, 2].map((i) => ({ candle: { openTs: T + i * M, open: 1, high: 1.1, low: 0.9, close: 1.05, tickCount: 5 }, source: 'rebuilt' as const }));
+    b.preload(A, true, hist);
+    expect(b.drain()).toEqual([]);
+    expect(b.closed(A).map((c) => c.openTs)).toEqual([T, T + M, T + 2 * M]);
+    b.onTick(A, true, T + 10 * M + 30 * S, 1.2); // worker restarted mid-candle, minutes later
+    b.advance(T + 11 * M);
+    const effects = b.drain();
+    expect(effects.find((e) => e.kind === 'gap')).toMatchObject({ fromOpenTs: T + 3 * M, toOpenTs: T + 10 * M, missing: 7 });
+    expect(closedOf(effects)).toEqual([]); // the restart minute is partial
+    expect(b.closed(A)).toHaveLength(3);
+  });
+
+  it('refuses to preload over a forming candle', () => {
+    const b = new CandleBuilder({ tf: '1m' });
+    b.onTick(A, true, T + S, 1);
+    expect(() => b.preload(A, true, [])).toThrow(/forming/);
   });
 });
