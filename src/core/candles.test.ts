@@ -271,6 +271,19 @@ describe('CandleBuilder.backfill (platform history on asset open)', () => {
     expect(b.dropCounts(A).partial).toBe(0);
   });
 
+  it('joins chunks from a chart scrolled back for hours and keeps memory small', () => {
+    const b = new CandleBuilder({ tf: '1m', partialStartToleranceMs: 3 * S });
+    b.advance(T + 10 * 60 * M);
+    // The page loads older history in 50-minute chunks, newest first; each chunk ends mid-minute.
+    const end = T + 2 * 60 * M + 8 * S; // 8 h before now
+    expect(b.backfill(A, true, run(end - 50 * M, end))).toBe(49);
+    expect(b.backfill(A, true, run(end - 100 * M, end - 50 * M))).toBe(50); // 49 + the joined boundary minute
+    expect(b.closedCandle(A, end - 50 * M - 8 * S)).not.toBeNull();
+    const effects = closedOf(b.drain());
+    expect(new Set(effects.map((c) => c.openTs)).size).toBe(99);
+    expect(b.backfill(A, true, run(end - 100 * M, end))).toBe(0); // same chunks again: nothing new
+  });
+
   it('completes the partial candle when history arrived before the first live tick', () => {
     const b = new CandleBuilder({ tf: '1m', partialStartToleranceMs: 3 * S });
     b.backfill(A, true, run(T - 2 * M, T + 15 * S));

@@ -56,6 +56,8 @@ interface AssetState {
   lastOpenTs: number | null;
   /** Platform history ticks (backfill), oldest first, deduplicated by ts. */
   history: Tick[];
+  /** Minutes already built from history, including ones too old to keep in memory. */
+  backfilled: Set<number>;
   /** A candle has been started from live ticks since this builder was created. */
   liveStarted: boolean;
   // Closed history, oldest first, as parallel arrays. `candles` holds the winning version (feed over rebuilt).
@@ -214,27 +216,37 @@ export class CandleBuilder {
   backfill(asset: string, isOTC: boolean, ticks: readonly Tick[]): number {
     const s = this.state(asset, isOTC);
     s.history = mergeTicks(s.history, ticks.filter((t) => Number.isFinite(t.ts) && Number.isFinite(t.price)));
-    const newest = s.history.length ? s.history[s.history.length - 1]!.ts : -Infinity;
-    const keepFrom = Math.max(newest, this.nowTs) - TUNABLES.historyBackfillKeepMs.value; // TUNABLE: historyBackfillKeepMs
-    if (s.history.length && s.history[0]!.ts < keepFrom) s.history = s.history.filter((t) => t.ts >= keepFrom);
 
     const tol = this.coverTol();
     const formingOpen = s.forming?.openTs ?? Infinity;
+    const done = new Set<number>(); // minutes that have a candle now, so their history ticks can go
     let added = 0;
     for (const group of byOpenTs(s.history, this.tfMs)) {
       const m = group.openTs;
       if (m >= formingOpen || m + this.tfMs > this.nowTs) continue; // still open: live ticks build it
-      if (indexOf(s.candles, m) >= 0) continue;
+      if (indexOf(s.candles, m) >= 0 || s.backfilled.has(m)) { done.add(m); continue; }
       const first = group.ticks[0]!, last = group.ticks[group.ticks.length - 1]!;
       if (first.ts - m > tol || m + this.tfMs - last.ts > tol) continue;
       const c = freezeCandle(candleFromTicks(m, group.ticks));
+      // Older than the in-memory history (a chart scrolled back for hours): still written to the ledger.
       const i = this.insert(s, c, 'rebuilt');
-      if (i < 0) continue;
-      s.rebuilt[i] = c;
+      if (i >= 0) s.rebuilt[i] = c;
+      s.backfilled.add(m);
       this.effects.push({ kind: 'closed', candle: { asset: s.asset, isOTC: s.isOTC, tf: this.tf, ...c, source: 'rebuilt' } });
+      done.add(m);
       added++;
     }
     this.completeFromHistory(s);
+
+    // Keep only ticks of minutes still waiting for a neighbouring batch (batch ends are cut
+    // mid-minute), within a time window and a size cap, so memory stays small however far back
+    // the chart was scrolled.
+    const keepFrom = Math.max(this.nowTs, s.history.at(-1)?.ts ?? -Infinity) - TUNABLES.historyBackfillKeepMs.value; // TUNABLE: historyBackfillKeepMs
+    const openTsOfTick = (t: Tick) => t.ts - (((t.ts % this.tfMs) + this.tfMs) % this.tfMs);
+    s.history = s.history.filter((t) => t.ts >= keepFrom && !done.has(openTsOfTick(t)));
+    const cap = TUNABLES.historyBackfillMaxTicks.value; // TUNABLE: historyBackfillMaxTicks
+    if (s.history.length > cap) s.history = s.history.slice(-cap);
+    for (const m of s.backfilled) if (m < keepFrom) s.backfilled.delete(m);
     return added;
   }
 
@@ -263,7 +275,7 @@ export class CandleBuilder {
     let s = this.states.get(asset);
     if (!s) {
       s = {
-        asset, isOTC, lastTickTs: -Infinity, floorTs: -Infinity, forming: null, ticks: [], lastOpenTs: null, liveStarted: false, history: [],
+        asset, isOTC, lastTickTs: -Infinity, floorTs: -Infinity, forming: null, ticks: [], lastOpenTs: null, liveStarted: false, history: [], backfilled: new Set(),
         candles: [], sources: [], rebuilt: [], mismatchLogged: [], pendingFeed: new Map(),
         drops: { duplicate: 0, outOfOrder: 0, late: 0, invalid: 0, partial: 0 },
       };
