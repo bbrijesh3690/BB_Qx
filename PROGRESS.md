@@ -25,8 +25,8 @@ The lead then:
 
 | Branch | Agent | Scope | Status |
 | --- | --- | --- | --- |
-| `wave1/extension` | Feed + extension | MV3 manifest, WebSocket interception, raw-frame recorder, Quotex frame decoder, IndexedDB ledger, minimal panel, dataset export, build script | started |
-| `wave1/core-harness` | Core + harness | rng, time, tunables, candle builder, pipeline (freeze at T-5s, scoring), in-memory ledger, ledger conformance suite, null engine, 4 synthetic generators, harness runner and CLI, evidence regression tests | started |
+| `wave1/extension` | Feed + extension | MV3 manifest, WebSocket interception, raw-frame recorder, Quotex frame decoder, IndexedDB ledger, minimal panel, dataset export, build script | **merged** into main 2026-10-22 (122 tests green, `npm run build:ext` OK) |
+| `wave1/core-harness` | Core + harness | rng, time, tunables, candle builder, pipeline (freeze at T-5s, scoring), in-memory ledger, ledger conformance suite, null engine, 4 synthetic generators, harness runner and CLI, evidence regression tests | items 1-6 and 8b pushed; resumed after the usage limit for 7, 8a, 8c-8e |
 | `wave1/engines` | Engines | Feature library (one per indicator family), feed-structure engine, price action engine | **merged** into main 2026-10-22 (65 tests green) |
 
 ## Phase 0 checklist
@@ -51,7 +51,13 @@ Follow-ups for wave 2 (lead):
 - Price action reads closed candles only and ignores `ctx.forming`, so at T-5s it predicts two candles ahead of its newest data. Try the forming candle as a provisional close and measure it against the flip rate.
 - `EngineStats.abstains` can't be counted inside an engine (`vote()` is pure, abstains get no outcome). The phase 1 scoreboard, computed from the ledger, is the source of truth for counters.
 - `FeedStructure` has no trend sign; consider adding a signed drift field in phase 1.
-- Consolidate `src/engines/stats-tracker.ts` with the null engine's tracker; register the engines' TUNABLEs in `src/core/tunables.ts`.
+- Consolidate `src/engines/stats-tracker.ts` with the null engine's tracker; register the engines' and the extension's TUNABLEs in `src/core/tunables.ts`.
+
+Integration notes (lead, when core-harness lands):
+- Replace `createSink` in `src/extension/background/sink.ts` with the core `Pipeline` (null, feed-structure, price-action engines).
+- On worker restart, reload each asset's closed candles from the ledger into the pipeline and restore engine state, so engines don't sit in warmup again (feed-structure needs 200 candles, about 3.3 h).
+- Run the conformance suite (`src/ledger/conformance.ts`) against the IndexedDB ledger. The extension agent's choices to check: `listSignals` filters on `ts`; votes sorted by (candleOpenTs, voteId); event seq starts at 1; `engine_stats` export puts numeric buckets before `'all'`; `listAssets` comes from candles and votes.
+- `npm run analyze-frames -- <raw.ndjson> --dataset out.ndjson` builds a full-recording dataset from raw frames (the ledger keeps only 2 h of ticks).
 
 ## Decisions log
 
