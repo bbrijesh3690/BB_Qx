@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quorum export</title>
+  <style>
+    :root { --bg: #ffffff; --fg: #0f172a; --muted: #475569; --line: #cbd5e1; --bar: #0284c7; --err: #b91c1c; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #0f172a; --fg: #e2e8f0; --muted: #94a3b8; --line: #334155; --bar: #38bdf8; --err: #fca5a5; } }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 640px; margin: 40px auto; padding: 0 16px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    p { color: var(--muted); margin: 4px 0 16px; }
+    .card { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 12px 0; }
+    .card h2 { font-size: 15px; margin: 0 0 4px; }
+    button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    progress { width: 100%; height: 8px; accent-color: var(--bar); }
+    .status { font-variant-numeric: tabular-nums; color: var(--muted); min-height: 1.5em; }
+    .status.error { color: var(--err); }
+    code { font-size: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Quorum export</h1>
+    <p>Reads this extension's IndexedDB and downloads NDJSON files. Nothing is sent anywhere.</p>
+
+    <div class="card" id="raw">
+      <h2>Raw frames</h2>
+      <p>Every recorded WebSocket frame (redacted before storage), one JSON record per line, for schema mapping with <code>npm run analyze-frames -- &lt;file&gt;</code>.</p>
+      <button type="button" data-export="raw">Download raw frames</button>
+      <progress max="1" value="0" hidden></progress>
+      <div class="status"></div>
+    </div>
+
+    <div class="card" id="dataset">
+      <h2>Dataset (bbqx-dataset)</h2>
+      <p>A DatasetMeta line, then tick, feed-candle and payout events ordered by time, for the replay harness. Ticks cover only the ledger's 2-hour window; for a full-length dataset, convert the raw frames with <code>npm run analyze-frames -- &lt;raw.ndjson&gt; --dataset &lt;out.ndjson&gt;</code>.</p>
+      <button type="button" data-export="dataset">Download dataset</button>
+      <progress max="1" value="0" hidden></progress>
+      <div class="status"></div>
+    </div>
+  </main>
+  <script type="module" src="export.js"></script>
+</body>
+</html>
