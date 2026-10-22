@@ -96,7 +96,7 @@ describe('hypothesis H2: instruments/list -> payouts', () => {
 
 describe('hypothesis H3: history -> closed feed candles only', () => {
   const T = Date.UTC(2026, 9, 22, 11, 55, 0) / 1000;
-  const hist = (period: number, candles: unknown[]) => JSON.stringify({ asset: 'EURUSD_otc', period, history: [[T, 1.1, 0]], candles });
+  const hist = (period: number, candles: unknown[]) => JSON.stringify({ asset: 'EURUSD_otc', period, history: [], candles }); // history ticks are covered in 'history ticks for backfill'
 
   it('decodes [ts, open, close, high, low] rows, drops the newest and any not yet closed', () => {
     const d = new QuotexDecoder();
@@ -170,5 +170,18 @@ describe('hypothesis H5 and unknown events', () => {
     expect(Object.fromEntries(d.unknown)).toEqual({ 'in s_balance': 2, 'in tick': 1, 'out tick': 1 });
     const weird: SocketEvent = { name: 'quotes/stream', nsp: '/', ackId: null, args: [new Uint8Array([0xff])], attachments: 1 };
     expect(d.decode(weird, 'in', NOW).events).toEqual([]);
+  });
+});
+
+// Shapes confirmed in the first real recording (2026-10-22); values made up.
+describe('history ticks for backfill', () => {
+  it('turns history/list/v2 array rows and history/load object rows into one history event each', () => {
+    const d = new QuotexDecoder();
+    const ev = (name: string, payload: unknown): SocketEvent => ({ name, nsp: '/', ackId: null, args: [payload], attachments: 0 });
+    const list = d.decode(ev('history/list/v2', { asset: 'BRLUSD_otc', period: 15, history: [[1792669211.251, 0.19444, 1], [1792669211.037, 0.19441, 0]], candles: [] }), 'in', 1792669212000);
+    expect(list.events).toEqual([{ kind: 'history', asset: 'BRLUSD_otc', isOTC: true, ts: 1792669212000, ticks: [{ ts: 1792669211037, price: 0.19441 }, { ts: 1792669211251, price: 0.19444 }] }]);
+    const load = d.decode(ev('history/load', { asset: 'NZDCAD_otc', index: 1, period: 0, data: [{ asset: 'NZDCAD_otc', time: 1792666209.3, price: 0.8123, tick: 1 }, { time: 'bad', price: 1 }] }), 'in', 1792669300000);
+    expect(load.events).toEqual([{ kind: 'history', asset: 'NZDCAD_otc', isOTC: true, ts: 1792669300000, ticks: [{ ts: 1792666209300, price: 0.8123 }] }]);
+    expect(d.stats).toMatchObject({ historyTicks: 3, historyTicksRejected: 1, historyIgnored: 0 });
   });
 });

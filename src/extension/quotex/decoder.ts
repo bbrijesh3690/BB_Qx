@@ -5,7 +5,7 @@
 // `npm run analyze-frames -- <raw-frames.ndjson>` and fix the table; the code below it should not
 // need to change. The decoder never throws: anything that does not fit is counted and dropped.
 
-import { TF_MS, type Candle, type MarketEvent, type Timeframe } from '../../core/contracts';
+import { TF_MS, type Candle, type MarketEvent, type Tick, type Timeframe } from '../../core/contracts';
 import { attachmentJson, type SocketEvent } from './socketio';
 
 // ---------------------------------------------------------------------------------------------
@@ -24,10 +24,16 @@ export const QUOTEX_SCHEMA = {
     /** pyquotex reads symbol at 1, display name at 2, payout percent at 5. */
     row: { asset: 1, name: 2, payoutPercent: 5 },
   },
-  /** H3: incoming chart history for the active asset. Only the candle part is decoded. */
+  /**
+   * H3: incoming chart history for an asset when it is opened. Confirmed 2026-10-22 at chart period
+   * 15 s: history/list/v2 carries `history: [[tsSeconds, price, flag], ...]` (about 10 min) and
+   * history/load carries `data: [{asset, time, price, tick}, ...]` (about 50 min); `candles` was empty.
+   */
   history: {
     events: ['history/list/v2', 'history/load', 'history/load/line'],
     fields: { asset: 'asset', period: 'period', candles: 'candles' },
+    /** Tick lists: array rows [ts, price, ...] under `history`, object rows {time, price} under `data`. */
+    ticks: { arrayField: 'history', arrayRow: { ts: 0, price: 1 }, objectField: 'data', objectRow: { ts: 'time', price: 'price' } },
     /** Candle row: [openTs, open, close, high, low, ...]. Note the order: close before high/low. */
     candle: { ts: 0, open: 1, close: 2, high: 3, low: 4 },
     /** Period in seconds -> timeframe. Other periods are ignored. */
@@ -68,6 +74,9 @@ export interface DecoderStats {
   /** Candles that may still be forming (newest in a batch or not yet closed by server time). */
   candlesSkippedOpen: number;
   historyIgnored: number;
+  /** Ticks taken from history payloads for backfill, and history rows that didn't parse. */
+  historyTicks: number;
+  historyTicksRejected: number;
   /** Known events whose payload did not have the hypothesised shape at all. */
   badPayloads: number;
 }
@@ -101,7 +110,7 @@ export function payloadOf(ev: SocketEvent): unknown {
 export class QuotexDecoder {
   readonly stats: DecoderStats = {
     ticks: 0, ticksRejected: 0, payouts: 0, payoutsRejected: 0, candles: 0, candlesRejected: 0,
-    candlesSkippedOpen: 0, historyIgnored: 0, badPayloads: 0,
+    candlesSkippedOpen: 0, historyIgnored: 0, historyTicks: 0, historyTicksRejected: 0, badPayloads: 0,
   };
   /** Event names not in the mapping table, keyed "in name" / "out name". */
   readonly unknown = new Map<string, number>();
@@ -202,12 +211,15 @@ export class QuotexDecoder {
     }
     const p = payload as Record<string, unknown>;
     const asset = p[H.fields.asset];
+    const ticks = isAsset(asset) ? this.historyTicks(p) : [];
+    const backfill: MarketEvent[] = ticks.length ? [{ kind: 'history', asset: asset as string, isOTC: isOtcAsset(asset as string), ts: serverNow, ticks }] : [];
+    this.stats.historyTicks += ticks.length;
     const period = p[H.fields.period];
     const rows = p[H.fields.candles];
     const tf = isNum(period) ? H.periods[period] : undefined;
     if (!isAsset(asset) || !tf || !Array.isArray(rows)) {
-      this.stats.historyIgnored++;
-      return [];
+      if (backfill.length === 0) this.stats.historyIgnored++;
+      return backfill;
     }
     const tfMs = TF_MS[tf];
     const parsed: Candle[] = [];
@@ -216,7 +228,7 @@ export class QuotexDecoder {
       if (c) parsed.push(c);
       else this.stats.candlesRejected++;
     }
-    if (parsed.length === 0) return [];
+    if (parsed.length === 0) return backfill;
     // The newest candle of a history batch is usually the one still forming; a 'feed' candle can
     // never be replaced by a rebuilt one, so a partial candle must not get in.
     const newest = Math.max(...parsed.map((c) => c.openTs));
@@ -231,7 +243,28 @@ export class QuotexDecoder {
     }
     out.sort((a, b) => (a.kind === 'candle' && b.kind === 'candle' ? a.candle.openTs - b.candle.openTs : 0));
     this.stats.candles += out.length;
-    return out;
+    return [...backfill, ...out];
+  }
+
+  /** Valid history ticks of one payload, oldest first. Rows that don't parse are counted and skipped. */
+  private historyTicks(p: Record<string, unknown>): Tick[] {
+    const T = QUOTEX_SCHEMA.history.ticks;
+    const out: Tick[] = [];
+    const add = (ts: unknown, price: unknown) => {
+      if (isNum(ts) && ts > 0 && isPrice(price)) out.push({ ts: toMs(ts), price });
+      else this.stats.historyTicksRejected++;
+    };
+    const arr = p[T.arrayField];
+    if (Array.isArray(arr)) for (const r of arr) Array.isArray(r) ? add(r[T.arrayRow.ts], r[T.arrayRow.price]) : this.stats.historyTicksRejected++;
+    const obj = p[T.objectField];
+    if (Array.isArray(obj)) {
+      for (const r of obj) {
+        const o = typeof r === 'object' && r !== null ? (r as Record<string, unknown>) : null;
+        if (o) add(o[T.objectRow.ts], o[T.objectRow.price]);
+        else this.stats.historyTicksRejected++;
+      }
+    }
+    return out.sort((a, b) => a.ts - b.ts);
   }
 
   private candleRow(r: unknown[], tfMs: number): Candle | null {

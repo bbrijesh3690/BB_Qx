@@ -107,6 +107,18 @@ function parseEvent(v: unknown, line: number): MarketEvent {
     case 'clock':
       if (!isNum(v.ts)) throw bad('ts');
       return { kind: 'clock', ts: v.ts };
+    case 'history': {
+      if (!isStr(v.asset)) throw bad('asset');
+      if (typeof v.isOTC !== 'boolean') throw bad('isOTC');
+      if (!isNum(v.ts)) throw bad('ts');
+      if (!Array.isArray(v.ticks)) throw bad('ticks');
+      const ticks = v.ticks.map((t: unknown) => {
+        const o = t as Record<string, unknown> | null;
+        if (!o || !isNum(o.ts) || !isNum(o.price)) throw bad('ticks');
+        return { ts: o.ts, price: o.price };
+      });
+      return { kind: 'history', asset: v.asset, isOTC: v.isOTC, ts: v.ts, ticks };
+    }
     default:
       throw new Error(`dataset line ${line}: unknown event kind ${JSON.stringify(v.kind)}`);
   }

@@ -74,6 +74,10 @@ export function createDirectSink(ledger: Ledger): FeedSink {
           ticks.push({ asset: ev.asset, ts: ev.ts, price: ev.price });
           if (ticks.length >= TICK_BATCH) await flush();
           return;
+        case 'history':
+          for (const t of ev.ticks) ticks.push({ asset: ev.asset, ts: t.ts, price: t.price });
+          if (ticks.length >= TICK_BATCH) await flush();
+          return;
         case 'payout':
           await ledger.appendPayout({ asset: ev.asset, ts: ev.ts, percent: ev.percent });
           return;

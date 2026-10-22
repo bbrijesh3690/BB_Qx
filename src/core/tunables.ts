@@ -20,6 +20,8 @@ export const TUNABLES = {
   // --- extension runtime ---
   partialStartToleranceMs: { // TUNABLE: the first candle seen after a page load or worker restart started without us
     value: 3000, unit: 'ms', reason: 'first candle per asset is dropped when its first tick came this long after its open, so its open and colour would be wrong', source: 'src/extension/background/sink.ts' },
+  historyBackfillKeepMs: { // TUNABLE: Quotex sends about 60 min per asset open; keep a little more so batches can join up
+    value: 2 * HOUR_MS, unit: 'ms', reason: 'platform history ticks kept per asset to join overlapping batches (history/list/v2 + history/load) before building candles from them', source: 'src/core/candles.ts' },
   // --- pipeline ---
   freezeBeforeCloseMs: { // TUNABLE: BB_Qx.md freezes decisions at T-5s; shorter leaves no time to act live
     value: 5000, unit: 'ms', reason: 'BB_Qx.md freezes decisions at T-5s before close', source: 'src/core/pipeline.ts' },

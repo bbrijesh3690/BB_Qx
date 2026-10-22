@@ -141,6 +141,17 @@ export class Pipeline implements MarketEventSink {
         this.applyPayout(ev.asset, ev.isOTC, ev.ts, ev.percent);
         await this.ledger.appendPayout({ asset: ev.asset, ts: ev.ts, percent: ev.percent });
         return;
+      case 'history': {
+        // Platform history on asset open: fills closed minutes we lack, never votes.
+        await this.advanceTo(ev.ts);
+        this.runtime(ev.asset, ev.isOTC);
+        const added = this.builder.backfill(ev.asset, ev.isOTC, ev.ticks);
+        for (const t of ev.ticks) this.tickBuffer.push({ asset: ev.asset, ts: t.ts, price: t.price });
+        await this.drainBuilder();
+        if (this.tickBuffer.length >= this.tickBatch) await this.flushTicks();
+        if (added > 0) await this.log('info', ev.asset, undefined, { backfill: 'history', candles: added, ticks: ev.ticks.length });
+        return;
+      }
       case 'candle':
         if (!isValidCandle(ev.candle, ev.tf)) return;
         this.runtime(ev.asset, ev.isOTC);

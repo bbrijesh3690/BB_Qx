@@ -54,6 +54,8 @@ interface AssetState {
   ticks: Tick[];
   /** openTs of the latest candle built from ticks, for gap detection. */
   lastOpenTs: number | null;
+  /** Platform history ticks (backfill), oldest first, deduplicated by ts. */
+  history: Tick[];
   /** A candle has been started from live ticks since this builder was created. */
   liveStarted: boolean;
   // Closed history, oldest first, as parallel arrays. `candles` holds the winning version (feed over rebuilt).
@@ -131,6 +133,7 @@ export class CandleBuilder {
       s.forming = { openTs, open: price, high: price, low: price, close: price, tickCount: 1, partial };
       s.ticks = [Object.freeze({ ts, price })];
       s.lastOpenTs = openTs;
+      if (partial) this.completeFromHistory(s);
     } else {
       const f = s.forming;
       if (price > f.high) f.high = price;
@@ -199,6 +202,43 @@ export class CandleBuilder {
   }
 
   /**
+   * Recent ticks the platform sent when the asset was opened. They are kept (deduplicated, for
+   * historyBackfillKeepMs) and used two ways, never overriding candles the builder already has:
+   * - a closed minute the builder lacks becomes a 'rebuilt' candle (with a 'closed' effect) when
+   *   the history covers all of it: first tick within the tolerance of its open, last tick within
+   *   the tolerance of its close. History batches start and end mid-minute; those minutes are skipped.
+   * - a live candle that started partial (the builder joined mid-minute) gets the history ticks
+   *   before its first live tick prepended, if they reach back to its open.
+   * Returns the number of candles added.
+   */
+  backfill(asset: string, isOTC: boolean, ticks: readonly Tick[]): number {
+    const s = this.state(asset, isOTC);
+    s.history = mergeTicks(s.history, ticks.filter((t) => Number.isFinite(t.ts) && Number.isFinite(t.price)));
+    const newest = s.history.length ? s.history[s.history.length - 1]!.ts : -Infinity;
+    const keepFrom = Math.max(newest, this.nowTs) - TUNABLES.historyBackfillKeepMs.value; // TUNABLE: historyBackfillKeepMs
+    if (s.history.length && s.history[0]!.ts < keepFrom) s.history = s.history.filter((t) => t.ts >= keepFrom);
+
+    const tol = this.coverTol();
+    const formingOpen = s.forming?.openTs ?? Infinity;
+    let added = 0;
+    for (const group of byOpenTs(s.history, this.tfMs)) {
+      const m = group.openTs;
+      if (m >= formingOpen || m + this.tfMs > this.nowTs) continue; // still open: live ticks build it
+      if (indexOf(s.candles, m) >= 0) continue;
+      const first = group.ticks[0]!, last = group.ticks[group.ticks.length - 1]!;
+      if (first.ts - m > tol || m + this.tfMs - last.ts > tol) continue;
+      const c = freezeCandle(candleFromTicks(m, group.ticks));
+      const i = this.insert(s, c, 'rebuilt');
+      if (i < 0) continue;
+      s.rebuilt[i] = c;
+      this.effects.push({ kind: 'closed', candle: { asset: s.asset, isOTC: s.isOTC, tf: this.tf, ...c, source: 'rebuilt' } });
+      added++;
+    }
+    this.completeFromHistory(s);
+    return added;
+  }
+
+  /**
    * Restores closed history (for example from the ledger after a worker restart) without emitting
    * effects. Only for an asset with no forming candle. Later live ticks continue after it; a jump
    * from the newest preloaded candle to the first live one is reported as a gap.
@@ -223,13 +263,34 @@ export class CandleBuilder {
     let s = this.states.get(asset);
     if (!s) {
       s = {
-        asset, isOTC, lastTickTs: -Infinity, floorTs: -Infinity, forming: null, ticks: [], lastOpenTs: null, liveStarted: false,
+        asset, isOTC, lastTickTs: -Infinity, floorTs: -Infinity, forming: null, ticks: [], lastOpenTs: null, liveStarted: false, history: [],
         candles: [], sources: [], rebuilt: [], mismatchLogged: [], pendingFeed: new Map(),
         drops: { duplicate: 0, outOfOrder: 0, late: 0, invalid: 0, partial: 0 },
       };
       this.states.set(asset, s);
     }
     return s;
+  }
+
+  private coverTol(): number {
+    return this.partialTol ?? TUNABLES.partialStartToleranceMs.value; // TUNABLE: partialStartToleranceMs
+  }
+
+  /** Prepends history ticks to a partial forming candle when they reach back to its open. */
+  private completeFromHistory(s: AssetState): void {
+    const f = s.forming;
+    if (!f || !f.partial || s.history.length === 0) return;
+    const firstLive = s.ticks[0]!.ts;
+    const before = s.history.filter((t) => t.ts >= f.openTs && t.ts < firstLive);
+    if (before.length === 0 || before[0]!.ts - f.openTs > this.coverTol()) return;
+    s.ticks = [...before.map((t) => Object.freeze({ ts: t.ts, price: t.price })), ...s.ticks];
+    f.open = before[0]!.price;
+    for (const t of before) {
+      if (t.price > f.high) f.high = t.price;
+      if (t.price < f.low) f.low = t.price;
+    }
+    f.tickCount += before.length;
+    f.partial = false;
   }
 
   private closeForming(s: AssetState): void {
@@ -343,4 +404,41 @@ function indexOf(arr: readonly Candle[], openTs: number): number {
     if (t < openTs) return -1;
   }
   return -1;
+}
+
+/** Union of two tick lists sorted by ts; on equal ts the existing tick wins. */
+function mergeTicks(a: readonly Tick[], b: readonly Tick[]): Tick[] {
+  const sorted = [...b].sort((x, y) => x.ts - y.ts);
+  const out: Tick[] = [];
+  let i = 0, j = 0;
+  while (i < a.length || j < sorted.length) {
+    const x = a[i], y = sorted[j];
+    const t = y === undefined || (x !== undefined && x.ts <= y.ts) ? a[i++]! : sorted[j++]!;
+    if (out.length && out[out.length - 1]!.ts === t.ts) continue;
+    out.push(t);
+  }
+  return out;
+}
+
+/** Consecutive runs of ticks sharing a candle open time. */
+function* byOpenTs(ticks: readonly Tick[], tfMs: number): Generator<{ openTs: number; ticks: Tick[] }> {
+  let cur: { openTs: number; ticks: Tick[] } | null = null;
+  for (const t of ticks) {
+    const openTs = t.ts - (((t.ts % tfMs) + tfMs) % tfMs);
+    if (!cur || cur.openTs !== openTs) {
+      if (cur) yield cur;
+      cur = { openTs, ticks: [] };
+    }
+    cur.ticks.push(t);
+  }
+  if (cur) yield cur;
+}
+
+function candleFromTicks(openTs: number, ticks: readonly Tick[]): Candle {
+  let high = -Infinity, low = Infinity;
+  for (const t of ticks) {
+    if (t.price > high) high = t.price;
+    if (t.price < low) low = t.price;
+  }
+  return { openTs, open: ticks[0]!.price, high, low, close: ticks[ticks.length - 1]!.price, tickCount: ticks.length };
 }

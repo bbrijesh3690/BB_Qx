@@ -231,3 +231,52 @@ describe('CandleBuilder start-up and restore', () => {
     expect(() => b.preload(A, true, [])).toThrow(/forming/);
   });
 });
+
+describe('CandleBuilder.backfill (platform history on asset open)', () => {
+  const run = (from: number, to: number, step = 500, price = (ts: number) => 1 + ts / 1e12) => {
+    const out = [];
+    for (let ts = from; ts < to; ts += step) out.push({ ts, price: price(ts) });
+    return out;
+  };
+
+  it('builds closed minutes the history fully covers and skips the partial ends of a batch', () => {
+    const b = new CandleBuilder({ tf: '1m', partialStartToleranceMs: 3 * S });
+    b.advance(T + 10 * M);
+    const added = b.backfill(A, true, run(T + 20 * S, T + 5 * M + 30 * S)); // starts and ends mid-minute
+    expect(added).toBe(4);
+    expect(b.closed(A).map((c) => c.openTs)).toEqual([T + M, T + 2 * M, T + 3 * M, T + 4 * M]);
+    expect(closedOf(b.drain()).every((c) => c.source === 'rebuilt')).toBe(true);
+  });
+
+  it('joins overlapping batches, and never replaces a candle it already has', () => {
+    const b = new CandleBuilder({ tf: '1m', partialStartToleranceMs: 3 * S });
+    feedMinute(b, A, true, T + 2 * M, [5, 6, 5.5]); // a live candle at T+2m
+    b.advance(T + 10 * M);
+    b.drain();
+    expect(b.backfill(A, true, run(T + 2 * M + 40 * S, T + 5 * M))).toBe(2); // T+3m, T+4m
+    expect(b.backfill(A, true, run(T, T + 2 * M + 40 * S))).toBe(2); // T, T+1m; T+2m stays live
+    expect(b.closed(A).map((c) => c.openTs)).toEqual([T, T + M, T + 2 * M, T + 3 * M, T + 4 * M]);
+    expect(b.closedCandle(A, T + 2 * M)!.candle.open).toBe(5);
+    expect(b.backfill(A, true, run(T, T + 5 * M))).toBe(0); // idempotent
+  });
+
+  it('completes a live candle that started partial when history reaches back to its open', () => {
+    const b = new CandleBuilder({ tf: '1m', partialStartToleranceMs: 3 * S });
+    b.onTick(A, true, T + 20 * S, 2.0); // joined 20 s into the minute
+    b.onTick(A, true, T + 40 * S, 2.2);
+    b.backfill(A, true, [{ ts: T + 1 * S, price: 1.9 }, { ts: T + 10 * S, price: 1.8 }, { ts: T + 19 * S, price: 2.0 }]);
+    expect(b.forming(A)).toMatchObject({ open: 1.9, low: 1.8, high: 2.2, close: 2.2, tickCount: 5 });
+    b.advance(T + M);
+    expect(closedOf(b.drain()).map((c) => c.openTs)).toEqual([T]); // kept, not dropped as partial
+    expect(b.dropCounts(A).partial).toBe(0);
+  });
+
+  it('completes the partial candle when history arrived before the first live tick', () => {
+    const b = new CandleBuilder({ tf: '1m', partialStartToleranceMs: 3 * S });
+    b.backfill(A, true, run(T - 2 * M, T + 15 * S));
+    b.onTick(A, true, T + 16 * S, 3);
+    expect(b.forming(A)!.tickCount).toBeGreaterThan(1);
+    b.advance(T + M);
+    expect(b.closedCandle(A, T)).not.toBeNull();
+  });
+});

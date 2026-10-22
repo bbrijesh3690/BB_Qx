@@ -103,6 +103,12 @@ export type MarketEvent =
   /** A closed candle as reported by the feed itself; used to reconcile rebuilt candles. */
   | { kind: 'candle'; asset: string; isOTC: boolean; tf: Timeframe; candle: Candle }
   | { kind: 'payout'; asset: string; isOTC: boolean; ts: number; percent: number }
+  /**
+   * Recent ticks the platform sent for an asset when it was opened (Quotex sends about the last hour).
+   * `ts` is when they arrived. Batches can overlap each other and live ticks; they backfill closed
+   * minutes the pipeline doesn't have, and never trigger votes.
+   */
+  | { kind: 'history'; asset: string; isOTC: boolean; ts: number; ticks: Tick[] }
   /** Server-time heartbeat so time advances (freeze, scoring) even when no ticks arrive. */
   | { kind: 'clock'; ts: number };
 

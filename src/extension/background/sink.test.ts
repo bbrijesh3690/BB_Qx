@@ -51,3 +51,24 @@ describe('createPipelineSink', () => {
     expect((await ledger.queryVotes({ engine: 'null', scoredOnly: true })).length).toBeGreaterThan(before + 50);
   });
 });
+
+describe('createPipelineSink with platform history', () => {
+  it('backfills the hour before an asset was opened without voting on it', async () => {
+    const ledger = await openIndexedDbLedger('sink-history-1');
+    const sink = await createPipelineSink(ledger, SYNTHETIC_START_TS + 60 * M);
+    const openedAt = SYNTHETIC_START_TS + 60 * M + 20_000; // asset opened 20 s into a minute
+    const history = { kind: 'history' as const, asset: ASSET.asset, isOTC: true, ts: openedAt, ticks: [] as { ts: number; price: number }[] };
+    for (let ts = SYNTHETIC_START_TS + 30_500; ts < openedAt; ts += 500) history.ticks.push({ ts, price: 0.19 + (ts % 7_000) / 1e7 });
+    await sink.onEvent(history);
+    for (let ts = openedAt + 400; ts < openedAt + 3 * M; ts += 500) await sink.onEvent({ kind: 'tick', asset: ASSET.asset, isOTC: true, ts, price: 0.19 + (ts % 9_000) / 1e7 });
+    await sink.flush();
+
+    const candles = await ledger.getCandles(ASSET.asset, '1m');
+    expect(candles.filter((c) => c.openTs < SYNTHETIC_START_TS + 60 * M)).toHaveLength(59); // minute 0 started mid-minute
+    expect(candles.some((c) => c.openTs === SYNTHETIC_START_TS + 60 * M)).toBe(true); // the opening minute, completed from history
+    const votes = await ledger.queryVotes({ engine: 'null' });
+    expect(votes.every((v) => v.vote.candleOpenTs > SYNTHETIC_START_TS + 60 * M)).toBe(true);
+    const info = await ledger.listEvents({ kind: 'info' });
+    expect(info.some((e) => e.payload.backfill === 'history' && e.payload.candles === 59)).toBe(true);
+  });
+});

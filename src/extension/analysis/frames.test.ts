@@ -87,7 +87,7 @@ describe('scripts/analyze-frames', () => {
       expect(text).toContain('== Frames ==');
       const lines = readFileSync(out, 'utf8').trim().split('\n');
       expect(JSON.parse(lines[0]!).format).toBe('bbqx-dataset');
-      expect(lines.length).toBe(1 + 30 + 2 + 2);
+      expect(lines.length).toBe(1 + 30 + 2 + 2 + 1); // meta, ticks, candles, payouts, one history batch
       expect(JSON.parse(await analyzeFile(FIXTURE, { json: true })).frames).toBe(82);
     } finally {
       rmSync(dir, { recursive: true, force: true });

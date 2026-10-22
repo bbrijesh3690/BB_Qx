@@ -38,7 +38,8 @@ The lead then:
 - [x] `npm run check` green; harness replays a synthetic day deterministically; the IndexedDB ledger passes the same 38-test conformance suite as the in-memory one
 - [x] Extension loads in Chrome without errors (owner, 2026-10-22)
 - [x] Raw recording reviewed (12 min, 8,976 frames); decoder mapping confirmed against real frames. The first load ran the pre-integration build (recording started 17:20 IST, integrated build 17:23), so it showed ticks but 0 candles; replaying the recording through the core built candles correctly.
-- [ ] **Gate:** 24 h of candles and ticks on 5 assets (3 OTC); 50-candle colour spot-check; null engine scored on all; recorded day replays deterministically
+- [x] History backfill: each asset open fills up to about an hour of closed minutes from Quotex's own history, and completes the first partial candle
+- [ ] **Gate (amended 2026-10-22 by the owner):** 24 h of candles per asset **in total across sessions** on 5 assets (3 OTC), every gap logged; 50-candle colour spot-check; null engine scored on all; a recorded day replays deterministically
 
 ## What the first recording showed (2026-10-22)
 
@@ -97,11 +98,13 @@ Still open from integration:
 - 2026-10-22: Privacy: raw frames keep full payloads only for market events (`MARKET_EVENTS` in `src/extension/quotex/redact.ts`). Other events keep only their name; unpaired binary attachments are dropped whole. Raw frames stored under the old policy are deleted on the first start of the new build. Checked against the real recording: market data decodes identically, and no account data is left.
 - 2026-10-22: Raw recorder runs 1 h (cap 500k frames) instead of 24 h. The schema is mapped, and raw frames cost about 27 MB/hour. Ticks are kept 26 h instead of BB_Qx.md's 2 h, so a recorded day can be exported and replayed (about 100 MB for 5 assets). Revisit after the phase 0 gate.
 - 2026-10-22: Binary attachments are paired per direction. The page's own outgoing frames can fall between an incoming header and its attachment; one shared assembler lost 6 frames in the first recording.
+- 2026-10-22: Phase 0 gate counts 24 h of candles per asset in total across sessions, not one continuous run (owner's decision: Quotex reloads the page and closes assets on its own).
+- 2026-10-22: History backfill. New `MarketEvent` kind `history` (lead contract change): the decoder turns `history/list/v2` and `history/load` ticks into one event per batch. The candle builder keeps them (2 h) and builds a 'rebuilt' candle for every closed minute it lacks that the history covers from start to end (within 3 s). It completes a partial first live candle from them, never replaces a candle it already has, and backfilled minutes never vote. On the first recording: candles 12 → 71 (BRL/USD), 4 → 65 (NZD/CAD), 1 → 59 (USD/ARS), 1 → 57 (USD/IDR), 8 → 18 (USD/PKR, which got no `history/load`). In the 10 BRL/USD minutes covered by both live and history ticks, OHLC matched exactly.
 - 2026-10-22: Engines get a seed through `EngineFactory` so a harness run is fully determined by (source, engines, seed).
 
 ## Open questions for the owner
 
-0. **Phase 0 gate with gaps (asked 2026-10-22):** count 24 h of candles per asset in total across sessions, with every gap logged and excluded, instead of one continuous 24 h run? Lead's recommendation: yes. Also: backfill from the history Quotex sends on asset open, after a quick test of how far back it goes at a 5m chart period.
+0. ~~Phase 0 gate with gaps~~ Decided 2026-10-22 (owner): 24 h of candles per asset **in total across sessions**, every gap logged. History backfill: built. Pending: the owner's 5m-chart test to see whether a longer chart period brings more history.
 
 1. ~~Exact URL of the Quotex trading page~~ Answered 2026-10-22: `https://quotex.com/en/demo-trade` (demo account). Covered by the manifest's `https://quotex.com/*` match; quotex.io and qxbroker.com stay in the list as harmless extras.
 2. The 7 open questions at the end of BB_Qx.md; defaults are in use until answered.
