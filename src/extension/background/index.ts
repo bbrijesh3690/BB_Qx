@@ -162,7 +162,7 @@ chrome.runtime.onStartup.addListener(() => {
 
 let snapshotCache: { at: number; value: Promise<PanelSnapshot> } | null = null;
 
-async function handlePanel(req: PanelRequest): Promise<unknown> {
+async function handlePanel(req: PanelRequest, selfTabId: number | null): Promise<unknown> {
   const { ledger, proc } = await ready;
   const now = Date.now();
   switch (req.type) {
@@ -170,7 +170,7 @@ async function handlePanel(req: PanelRequest): Promise<unknown> {
       if (!snapshotCache || now - snapshotCache.at > SNAPSHOT_CACHE_MS) {
         snapshotCache = { at: now, value: buildSnapshot(proc, ledger, checkRecorder(recorder, now), now) };
       }
-      return snapshotCache.value;
+      return { ...(await snapshotCache.value), selfTabId };
     case 'panel/candles':
       return candleRows(ledger, String(req.asset), Number(req.n) || 50);
     case 'panel/recorder':
@@ -191,6 +191,6 @@ chrome.runtime.onMessage.addListener((req: unknown, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return false;
   const r = req as PanelRequest | null;
   if (!r || typeof r.type !== 'string' || !r.type.startsWith('panel/')) return false;
-  handlePanel(r).then(sendResponse, (err: unknown) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+  handlePanel(r, sender.tab?.id ?? null).then(sendResponse, (err: unknown) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
   return true;
 });

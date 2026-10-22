@@ -50,6 +50,7 @@ export async function buildSnapshot(proc: FeedProcessor, ledger: SnapshotLedger,
 
   return {
     now,
+    selfTabId: null,
     serverOffsetMs: proc.offset.offset(),
     framesSeen: proc.framesSeen,
     tabs: proc.tabViews(),

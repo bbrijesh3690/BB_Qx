@@ -122,6 +122,8 @@ export interface DecodeView {
 
 export interface PanelSnapshot {
   now: number;
+  /** Tab id of the panel that asked, filled in per request by the worker. */
+  selfTabId: number | null;
   serverOffsetMs: number | null;
   framesSeen: number;
   tabs: TabInfo[];
