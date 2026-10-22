@@ -47,7 +47,8 @@ The lead then:
 - `instruments/list` rows are `[id, assetId, displayName, type, ?, payoutPercent, ...]`. Payout (index 5) matches the number Quotex shows and changes every few minutes (BRL/USD went 90 → 92 → 91 → 85 → 86 → 88 → 90 in 12 minutes).
 - Quotex's ids aren't always its display names: `BRLUSD_otc` is shown as "USD/BRL (OTC)". Prices (about 0.194) follow the id. The panel now shows the display name, with the id in a tooltip.
 - An asset streams from the moment it is opened once in the page and keeps streaming after switching away (11 assets in one window during the second run). So one window covers the 5-asset gate.
-- `history/list/v2` and `history/load` carry recent tick history for the opened asset (about 50 minutes). Not used yet; it could backfill candles so engines skip warmup.
+- Each time an asset is opened, the page receives about 60 minutes of its tick history: about 10 minutes in `history/list/v2`, then 50 minutes in `history/load` (the page asks for `offset: 3000` s at chart period 15 s). `candles` is empty at that period. Not used yet; it could backfill gaps of up to an hour before each reopen and shorten warmup. Untested: whether a longer chart period (1m or 5m) makes the page ask for more history.
+- The owner reports that Quotex reloads the page and closes assets by itself, so a continuous unattended 24 h run isn't realistic. Possible causes to check: Chrome Memory Saver discarding the background tab, PC sleep, Quotex's own reconnects. The ledger logs every gap (`feed_gap`) and every worker reload.
 - Everything else on the socket is account data (balance, orders, trade history, settings). It is no longer stored (see decisions).
 
 ## Phase 1 (next)
@@ -99,6 +100,8 @@ Still open from integration:
 - 2026-10-22: Engines get a seed through `EngineFactory` so a harness run is fully determined by (source, engines, seed).
 
 ## Open questions for the owner
+
+0. **Phase 0 gate with gaps (asked 2026-10-22):** count 24 h of candles per asset in total across sessions, with every gap logged and excluded, instead of one continuous 24 h run? Lead's recommendation: yes. Also: backfill from the history Quotex sends on asset open, after a quick test of how far back it goes at a 5m chart period.
 
 1. ~~Exact URL of the Quotex trading page~~ Answered 2026-10-22: `https://quotex.com/en/demo-trade` (demo account). Covered by the manifest's `https://quotex.com/*` match; quotex.io and qxbroker.com stay in the list as harmless extras.
 2. The 7 open questions at the end of BB_Qx.md; defaults are in use until answered.
