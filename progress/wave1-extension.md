@@ -11,9 +11,12 @@ Feed + extension agent. Branch `wave1/extension`. Tick items as they land (tests
 - [x] 7. Panel (`src/extension/panel/*`)
 - [x] 8. Export page (`src/extension/export.html`, `export.ts`)
 - [x] 9. Schema-mapping tool (`scripts/analyze-frames.ts`)
-- [ ] 10. Build (`scripts/build-extension.mjs`, manifest) and confirm output
+- [x] 10. Build (`scripts/build-extension.mjs`, manifest) and confirm output
 
 ## Notes for a resuming agent
 
 - Link deps: in PowerShell `New-Item -ItemType Junction -Path node_modules -Target E:\Qx\BB_Qx\node_modules`.
 - Checks before each commit: `npx tsc --noEmit` and `npx vitest run src/extension src/ledger/indexeddb.test.ts scripts`.
+- Build: `npm run build:ext` -> `dist/extension` (manifest, background.js, inject.js, content.js, export.html, export.js + maps). Load unpacked from chrome://extensions.
+- Host matches live only in `src/extension/hosts.json`; owner confirmed the trading page https://quotex.com/en/demo-trade (covered).
+- Panel DOM smoke-tested in a browser with stubbed chrome APIs (renders, spot-check list works, no console errors).

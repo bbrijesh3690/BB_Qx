@@ -1,0 +1,8 @@
+[
+  "https://quotex.io/*",
+  "https://*.quotex.io/*",
+  "https://qxbroker.com/*",
+  "https://*.qxbroker.com/*",
+  "https://quotex.com/*",
+  "https://*.quotex.com/*"
+]

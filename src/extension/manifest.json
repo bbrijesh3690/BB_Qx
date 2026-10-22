@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Quorum",
+  "version": "0.0.0",
+  "description": "Shadow-mode recorder for the Quotex price feed. Reads the frames the page already receives; sends nothing and places no trades.",
+  "minimum_chrome_version": "111",
+  "permissions": ["storage", "unlimitedStorage"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["filled from hosts.json by scripts/build-extension.mjs"],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["filled from hosts.json by scripts/build-extension.mjs"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}
