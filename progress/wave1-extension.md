@@ -7,7 +7,7 @@ Feed + extension agent. Branch `wave1/extension`. Tick items as they land (tests
 - [x] 3. Quotex decoder (`src/extension/quotex/decoder.ts`) with hypothesis mapping table
 - [x] 4. Redaction (`src/extension/quotex/redact.ts`)
 - [x] 5. Interception (`src/extension/inject.ts`, `src/extension/content.ts`)
-- [ ] 6. Service worker (`src/extension/background/*.ts`)
+- [x] 6. Service worker (`src/extension/background/*.ts`)
 - [ ] 7. Panel (`src/extension/panel/*`)
 - [ ] 8. Export page (`src/extension/export.html`, `export.ts`)
 - [ ] 9. Schema-mapping tool (`scripts/analyze-frames.ts`)
